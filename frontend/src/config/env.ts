@@ -3,7 +3,7 @@ export const config = {
   // Spotify Configuration
   spotify: {
     clientId: import.meta.env.VITE_SPOTIFY_CLIENT_ID || '5b5e4ceb834347e6a6c3b998cfaf0088',
-    redirectUri: import.meta.env.VITE_SPOTIFY_REDIRECT_URI || 'http://localhost:5173/callback',
+    redirectUri: import.meta.env.VITE_SPOTIFY_REDIRECT_URI || 'http://localhost:5500/callback',
   },
   
   // Backend Configuration

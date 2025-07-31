@@ -34,8 +34,7 @@ from spotify_client import (
     create_spotify_playlist,
     get_spotify_track_uri,
     get_spotify_top_tracks_detailed,
-    get_spotify_playlist_by_id,
-    validate_token
+    get_spotify_playlist_by_id
 )
 from qloo_client import get_qloo_artist_id
 
@@ -52,7 +51,7 @@ SPOTIFY_MAX_REQUESTS_PER_MINUTE = 100  # Increased for better performance
 spotify_request_times = []
 
 # Gemini API rate limiting configuration
-GEMINI_RATE_LIMIT_DELAY = 1.0  # Base delay between calls in seconds
+GEMINI_RATE_LIMIT_DELAY = 0.1  # Optimized for Gemini 2.0 Flash-Lite (30 RPM = 0.5s between calls, using 0.1s for safety)
 GEMINI_MAX_RETRIES = 3
 GEMINI_BACKOFF_FACTOR = 2.0
 GEMINI_CACHE_DURATION = 3600  # 1 hour cache
@@ -1327,6 +1326,14 @@ def revoke_spotify_token(access_token, client_id, client_secret):
         print(f"Error checking token validity: {e}")
         return True
 
+def clear_spotify_session():
+    """Generate a unique session identifier to force new Spotify session"""
+    import secrets
+    import time
+    # Create a unique session identifier that will force Spotify to create a new session
+    session_id = f"session_{secrets.token_urlsafe(16)}_{int(time.time())}"
+    return session_id
+
 def force_spotify_reauth():
     """Force Spotify to require re-authentication by using a unique state parameter"""
     import secrets
@@ -1884,7 +1891,7 @@ def get_qloo_tag_ids(tags, qloo_api_key):
                 tag_ids.append(tag_id)
                 successful_tags.append(tag)
             
-            time.sleep(0.2)
+            time.sleep(0.05)  # Reduced delay for faster processing
         except Exception as e:
             print(f"[QLOO TAGS] ✗ Error getting tag for '{tag}': {e}")
             continue
@@ -2836,9 +2843,11 @@ def spotify_auth_url():
     client_id = request.args.get('client_id', DEFAULT_CLIENT_ID)
     redirect_uri = request.args.get('redirect_uri', DEFAULT_REDIRECT_URI)
     scope = request.args.get('scope', DEFAULT_SCOPE)
+    force_reauth = request.args.get('force_reauth', 'false').lower() == 'true'
     
     # Add parameters to force re-authentication
     import secrets
+    import time
     unique_state = secrets.token_urlsafe(32)
     
     params = {
@@ -2847,10 +2856,16 @@ def spotify_auth_url():
         "redirect_uri": redirect_uri,
         "scope": scope,
         "state": unique_state,
-        "show_dialog": "true",  # Force Spotify to show the authorization dialog
     }
+    
+    # Force re-authentication if requested
+    if force_reauth:
+        params["show_dialog"] = "true"  # Force Spotify to show the authorization dialog
+        # Add timestamp to ensure unique state
+        params["state"] = f"{unique_state}_{int(time.time())}"
+    
     url = "https://accounts.spotify.com/authorize?" + urllib.parse.urlencode(params)
-    return jsonify({"auth_url": url})
+    return jsonify({"auth_url": url, "state": params["state"]})
 
 @app.route('/callback')
 def callback():
@@ -2869,46 +2884,22 @@ def exchange_token():
     client_id = data.get('client_id', DEFAULT_CLIENT_ID)
     client_secret = data.get('client_secret', DEFAULT_CLIENT_SECRET)
     redirect_uri = data.get('redirect_uri', DEFAULT_REDIRECT_URI)
+    state = data.get('state')  # Optional state parameter for verification
+    
+    if not code:
+        return jsonify({'error': 'Missing authorization code'}), 400
+    
     try:
         token_response = exchange_code_for_token(code, client_id, client_secret, redirect_uri)
         if token_response and 'access_token' in token_response:
-            # Store tokens for future refresh
-            user_id = get_spotify_user_id(token_response['access_token'])
-            if user_id:
-                store_user_tokens(user_id, token_response['access_token'], 
-                                token_response.get('refresh_token'), 
-                                token_response.get('expires_in', 3600))
-            
-            return jsonify({
-                'access_token': token_response['access_token'],
-                'expires_in': token_response.get('expires_in', 3600)
-            })
+            response_data = {'access_token': token_response['access_token']}
+            if 'refresh_token' in token_response:
+                response_data['refresh_token'] = token_response['refresh_token']
+            return jsonify(response_data)
         else:
             return jsonify({'error': 'Failed to exchange code for token'}), 400
     except Exception as e:
-        return jsonify({'error': str(e)}), 400
-
-@app.route('/refresh-token', methods=['POST', 'OPTIONS'])
-def refresh_token():
-    if request.method == 'OPTIONS':
-        return '', 200
-    
-    data = request.get_json()
-    user_id = data.get('user_id')
-    client_id = data.get('client_id', DEFAULT_CLIENT_ID)
-    client_secret = data.get('client_secret', DEFAULT_CLIENT_SECRET)
-    
-    if not user_id:
-        return jsonify({'error': 'Missing user_id'}), 400
-    
-    try:
-        # In a real implementation, you'd retrieve the refresh token from database
-        # For now, we'll return an error indicating manual re-auth is needed
-        return jsonify({
-            'error': 'Token refresh not implemented. Please reconnect your Spotify account.',
-            'requires_reauth': True
-        }), 401
-    except Exception as e:
+        print(f"Token exchange error: {e}")
         return jsonify({'error': str(e)}), 400
 
 @app.route('/logout', methods=['POST', 'OPTIONS'])
@@ -2928,21 +2919,44 @@ def logout():
         revoke_spotify_token(access_token, client_id, client_secret)
         
         # Generate a unique state parameter to force new OAuth flow
-        unique_state = force_spotify_reauth()
+        import secrets
+        import time
+        unique_state = f"{secrets.token_urlsafe(32)}_{int(time.time())}"
+        session_id = clear_spotify_session()
         
         return jsonify({
             'success': True, 
             'message': 'Successfully logged out',
             'force_reauth': True,
-            'unique_state': unique_state
+            'unique_state': unique_state,
+            'session_id': session_id,
+            'reauth_url': f"http://localhost:5500/spotify-auth-url?redirect_uri=http://127.0.0.1:8080/callback&force_reauth=true&session_id={session_id}"
         })
     except Exception as e:
         # Even if revocation fails, we still return success for logout
         return jsonify({
             'success': True, 
             'message': 'Logged out (token revocation may have failed)',
-            'force_reauth': True
+            'force_reauth': True,
+            'reauth_url': f"http://localhost:5500/spotify-auth-url?redirect_uri=http://127.0.0.1:8080/callback&force_reauth=true"
         })
+
+@app.route('/spotify-session-clear', methods=['POST', 'OPTIONS'])
+def spotify_session_clear():
+    """Clear Spotify session and force re-authentication"""
+    if request.method == 'OPTIONS':
+        return '', 200
+    
+    try:
+        session_id = clear_spotify_session()
+        return jsonify({
+            'success': True,
+            'message': 'Spotify session cleared',
+            'session_id': session_id,
+            'reauth_url': f"http://localhost:5500/spotify-auth-url?redirect_uri=http://127.0.0.1:8080/callback&force_reauth=true&session_id={session_id}"
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/musicrecommandation', methods=['POST'])
 def music_recommendation():
@@ -3667,78 +3681,6 @@ Respond with a comma-separated list of the 5-8 most relevant tags only.
     except Exception as e:
         print(f"Error selecting domain tags with Gemini: {e}")
         return all_tags[:5]  # Fallback to first 5 tags
-
-def get_fallback_genres_for_artist(artist_name):
-    """Get fallback genres based on artist name patterns when Spotify API fails"""
-    artist_name_lower = artist_name.lower()
-    
-    # Common genre mappings based on artist name patterns
-    genre_patterns = {
-        # Electronic/Dance
-        'alan walker': ['electronic', 'dance', 'edm', 'pop'],
-        'marshmello': ['electronic', 'dance', 'edm', 'pop'],
-        'skrillex': ['electronic', 'dubstep', 'edm'],
-        'calvin harris': ['electronic', 'dance', 'pop'],
-        'david guetta': ['electronic', 'dance', 'edm'],
-        
-        # Indian Artists
-        'arijit singh': ['bollywood', 'indian pop', 'film music'],
-        'amit trivedi': ['bollywood', 'indian pop', 'film music'],
-        'pritam': ['bollywood', 'indian pop', 'film music'],
-        'shreya ghoshal': ['bollywood', 'indian pop', 'film music'],
-        'neha kakkar': ['bollywood', 'indian pop', 'film music'],
-        'divine': ['hip hop', 'rap', 'indian hip hop'],
-        'karsh kale': ['electronic', 'indian classical', 'fusion'],
-        'ritviz': ['indian pop', 'electronic', 'fusion'],
-        'pali': ['indian pop', 'bollywood'],
-        'sachin-jigar': ['bollywood', 'indian pop', 'film music'],
-        'mitraz': ['indian pop', 'bollywood'],
-        'benny dayal': ['bollywood', 'indian pop', 'film music'],
-        
-        # Pop Artists
-        'taylor swift': ['pop', 'country pop', 'pop rock'],
-        'ed sheeran': ['pop', 'folk pop', 'acoustic'],
-        'adele': ['pop', 'soul', 'r&b'],
-        'beyonce': ['pop', 'r&b', 'hip hop'],
-        'justin bieber': ['pop', 'r&b', 'dance pop'],
-        
-        # Rock Artists
-        'queen': ['rock', 'classic rock', 'hard rock'],
-        'led zeppelin': ['rock', 'hard rock', 'blues rock'],
-        'pink floyd': ['rock', 'progressive rock', 'psychedelic rock'],
-        'the beatles': ['rock', 'pop rock', 'classic rock'],
-        
-        # Hip Hop/Rap
-        'eminem': ['hip hop', 'rap', 'hardcore hip hop'],
-        'drake': ['hip hop', 'rap', 'r&b'],
-        'kendrick lamar': ['hip hop', 'rap', 'conscious hip hop'],
-        'post malone': ['hip hop', 'rap', 'pop rap'],
-    }
-    
-    # Check for exact matches first
-    for pattern, genres in genre_patterns.items():
-        if pattern in artist_name_lower:
-            return genres
-    
-    # Check for partial matches
-    for pattern, genres in genre_patterns.items():
-        if any(word in artist_name_lower for word in pattern.split()):
-            return genres
-    
-    # Default genres based on common patterns
-    if any(word in artist_name_lower for word in ['dj', 'electronic', 'edm']):
-        return ['electronic', 'dance', 'edm']
-    elif any(word in artist_name_lower for word in ['rock', 'metal']):
-        return ['rock', 'alternative rock']
-    elif any(word in artist_name_lower for word in ['rap', 'hip hop']):
-        return ['hip hop', 'rap']
-    elif any(word in artist_name_lower for word in ['jazz', 'blues']):
-        return ['jazz', 'blues']
-    elif any(word in artist_name_lower for word in ['classical', 'orchestra']):
-        return ['classical', 'orchestral']
-    else:
-        # Default to pop for unknown artists
-        return ['pop', 'contemporary']
 
 # Helper: Get user's country from Spotify profile
 def get_user_country(access_token):
@@ -5960,6 +5902,7 @@ def get_cross_domain_recommendations():
             ("urn:entity:podcast", "podcast"),
             ("urn:entity:tv_show", "TV show")
         ]
+        print(f"[DEBUG] ENTITY_TYPES: {ENTITY_TYPES}")
 
         # Initialize Qloo client (using existing class structure)
         qloo_client = QlooAPIClient(qloo_api_key)
@@ -5984,8 +5927,8 @@ def get_cross_domain_recommendations():
             
             # Add delay between artists to prevent rate limiting
             if i > 0:
-                print(f"[RATE LIMIT] Waiting 2 seconds between artists to prevent rate limiting")
-                time.sleep(2)
+                print(f"[RATE LIMIT] Waiting 0.5 seconds between artists to prevent rate limiting")
+                time.sleep(0.5)
             
             # Search for artist in Qloo
             try:
@@ -6023,7 +5966,7 @@ def get_cross_domain_recommendations():
                 
                 # Add small delay between domains to prevent rate limiting
                 if domain_i > 0:
-                    time.sleep(0.5)
+                    time.sleep(0.02)  # Reduced delay for faster processing
                 
                 try:
                     # Get dynamic tags for this domain with user country, location, and artist context
@@ -6197,13 +6140,18 @@ def get_cross_domain_recommendations():
         
         # Aggregate results by domain across all artists with deduplication
         domain_aggregated = {}
+        print(f"[DEBUG] Starting aggregation. all_recommendations keys: {list(all_recommendations.keys())}")
+        
         for domain_info in ENTITY_TYPES:
             domain = domain_info[1]
             domain_aggregated[domain] = []
             seen_entities = set()  # Track unique entities by name
+            print(f"[DEBUG] Processing domain: {domain}")
             
             for artist_name, artist_results in all_recommendations.items():
+                print(f"[DEBUG] Checking artist {artist_name} for domain {domain}")
                 if domain in artist_results:
+                    print(f"[DEBUG] Found {len(artist_results[domain])} items for {artist_name} in {domain}")
                     for entity in artist_results[domain]:
                         entity_name = entity.get('name', '').strip().lower()
                         
@@ -6214,6 +6162,10 @@ def get_cross_domain_recommendations():
                         seen_entities.add(entity_name)
                         entity['source_artist'] = artist_name
                         domain_aggregated[domain].append(entity)
+                else:
+                    print(f"[DEBUG] No {domain} found for artist {artist_name}")
+            
+            print(f"[DEBUG] Final count for {domain}: {len(domain_aggregated[domain])} items")
         
         # Sort by relevance instead of popularity for all domains
         user_genres = []
@@ -6256,6 +6208,13 @@ def get_cross_domain_recommendations():
             })
             print(f"[PROGRESS] Finalizing recommendations - 98%")
         
+        # Debug: Log the final domain_aggregated structure
+        print(f"[DEBUG] Final domain_aggregated structure:")
+        for domain, items in domain_aggregated.items():
+            print(f"[DEBUG] {domain}: {len(items)} items")
+            if items:
+                print(f"[DEBUG] First item in {domain}: {items[0]}")
+        
         # Prepare response data
         response_data = {
             "top_artists": music_artists,
@@ -6272,6 +6231,12 @@ def get_cross_domain_recommendations():
             "user_context": user_context,  # Include user context in response
             "user_tags": user_tags  # Include user tags in response
         }
+        
+        # Debug: Log the final response structure
+        print(f"[DEBUG] Final response structure:")
+        print(f"[DEBUG] recommendations_by_domain keys: {list(response_data['recommendations_by_domain'].keys())}")
+        for domain, items in response_data['recommendations_by_domain'].items():
+            print(f"[DEBUG] Response {domain}: {len(items)} items")
         
         # Cache the result
         cache_recommendation(user_id, cache_context, response_data, "crossdomain")
@@ -6574,44 +6539,23 @@ def generate_cross_domain_recommendations_unified(
                 # Try to get artist info from Spotify
                 try:
                     print(f"[DEBUG] Fetching genres for artist: {artist_name}")
-                    # First validate token before making API calls
-                    if not validate_token(spotify_token):
-                        print(f"[WARNING] Spotify token is invalid for {artist_name}, using fallback genres")
-                        # Use fallback genres based on artist name patterns
-                        fallback_genres = get_fallback_genres_for_artist(artist_name)
-                        user_artists_with_images.append({
-                            'name': artist_name,
-                            'genres': fallback_genres,
-                            'image': None
-                        })
-                    else:
-                        artist_genres = get_spotify_artist_genres(artist_name, spotify_token)
-                        print(f"[DEBUG] Retrieved genres for {artist_name}: {artist_genres}")
-                        if not artist_genres:
-                            # If no genres returned, use fallback
-                            fallback_genres = get_fallback_genres_for_artist(artist_name)
-                            print(f"[DEBUG] Using fallback genres for {artist_name}: {fallback_genres}")
-                            artist_genres = fallback_genres
-                        user_artists_with_images.append({
-                            'name': artist_name,
-                            'genres': artist_genres,
-                            'image': None
-                        })
-                except Exception as e:
-                    print(f"[ERROR] Failed to get genres for {artist_name}: {e}")
-                    # Use fallback genres on error
-                    fallback_genres = get_fallback_genres_for_artist(artist_name)
+                    artist_genres = get_spotify_artist_genres(artist_name, spotify_token)
+                    print(f"[DEBUG] Retrieved genres for {artist_name}: {artist_genres}")
                     user_artists_with_images.append({
                         'name': artist_name,
-                        'genres': fallback_genres,
+                        'genres': artist_genres,
+                        'image': None
+                    })
+                except Exception as e:
+                    print(f"[ERROR] Failed to get genres for {artist_name}: {e}")
+                    user_artists_with_images.append({
+                        'name': artist_name,
+                        'genres': [],
                         'image': None
                     })
         except Exception as e:
             print(f"Could not fetch artist details: {e}")
-            user_artists_with_images = []
-            for name in music_artists:
-                fallback_genres = get_fallback_genres_for_artist(name)
-                user_artists_with_images.append({'name': name, 'genres': fallback_genres, 'image': None})
+            user_artists_with_images = [{'name': name, 'genres': [], 'image': None} for name in music_artists]
     elif music_artists:
         print(f"[CROSS-DOMAIN UNIFIED] Using provided music artists: {music_artists}")
         # Get detailed info for provided artists
@@ -6619,42 +6563,22 @@ def generate_cross_domain_recommendations_unified(
             user_artists_with_images = []
             for artist_name in music_artists[:6]:  # Limit to 6 artists
                 try:
-                    # First validate token before making API calls
-                    if not validate_token(spotify_token):
-                        print(f"[WARNING] Spotify token is invalid for {artist_name}, using fallback genres")
-                        fallback_genres = get_fallback_genres_for_artist(artist_name)
-                        user_artists_with_images.append({
-                            'name': artist_name,
-                            'genres': fallback_genres,
-                            'image': None
-                        })
-                    else:
-                        artist_genres = get_spotify_artist_genres(artist_name, spotify_token)
-                        if not artist_genres:
-                            # If no genres returned, use fallback
-                            fallback_genres = get_fallback_genres_for_artist(artist_name)
-                            print(f"[DEBUG] Using fallback genres for {artist_name}: {fallback_genres}")
-                            artist_genres = fallback_genres
-                        user_artists_with_images.append({
-                            'name': artist_name,
-                            'genres': artist_genres,
-                            'image': None
-                        })
-                except Exception as e:
-                    print(f"Could not fetch details for {artist_name}: {e}")
-                    # Use fallback genres on error
-                    fallback_genres = get_fallback_genres_for_artist(artist_name)
+                    artist_genres = get_spotify_artist_genres(artist_name, spotify_token)
                     user_artists_with_images.append({
                         'name': artist_name,
-                        'genres': fallback_genres,
+                        'genres': artist_genres,
+                        'image': None
+                    })
+                except Exception as e:
+                    print(f"Could not fetch details for {artist_name}: {e}")
+                    user_artists_with_images.append({
+                        'name': artist_name,
+                        'genres': [],
                         'image': None
                     })
         except Exception as e:
             print(f"Could not fetch artist details: {e}")
-            user_artists_with_images = []
-            for name in music_artists[:6]:
-                fallback_genres = get_fallback_genres_for_artist(name)
-                user_artists_with_images.append({'name': name, 'genres': fallback_genres, 'image': None})
+            user_artists_with_images = [{'name': name, 'genres': [], 'image': None} for name in music_artists[:6]]
     else:
         # No artists provided, try to fetch from Spotify first
         print("[CROSS-DOMAIN UNIFIED] No artists provided, fetching from Spotify...")
@@ -6776,10 +6700,10 @@ def generate_cross_domain_recommendations_unified(
             })
             print(f"[PROGRESS] Processing artist {i+1}/5: {artist_name} - {percentage}%")
         
-        # Add delay between artists to prevent rate limiting
-        if i > 0:
-            print(f"[RATE LIMIT] Waiting 2 seconds between artists to prevent rate limiting")
-            time.sleep(2)
+                    # Add delay between artists to prevent rate limiting
+            if i > 0:
+                print(f"[RATE LIMIT] Waiting 0.5 seconds between artists to prevent rate limiting")
+                time.sleep(0.5)
         
         # Search for artist in Qloo
         try:
@@ -6817,8 +6741,8 @@ def generate_cross_domain_recommendations_unified(
             
             # Add delay between domains to prevent Gemini API rate limiting
             if domain_i > 0:
-                print(f"[GEMINI RATE LIMIT] Waiting 1 second between domains to prevent rate limiting")
-                time.sleep(1)
+                print(f"[GEMINI RATE LIMIT] Waiting 0.1 second between domains to prevent rate limiting")
+                time.sleep(0.1)
             
             try:
                 # Get dynamic tags for this domain with user country, location, and artist context

@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Gemini API rate limiting configuration
-GEMINI_RATE_LIMIT_DELAY = float(os.getenv('GEMINI_RATE_LIMIT_DELAY', '1.0'))  # Base delay between calls in seconds
+GEMINI_RATE_LIMIT_DELAY = float(os.getenv('GEMINI_RATE_LIMIT_DELAY', '0.1'))  # Optimized for Gemini 2.0 Flash-Lite (30 RPM = 0.5s between calls, using 0.1s for safety)
 GEMINI_MAX_RETRIES = int(os.getenv('GEMINI_MAX_RETRIES', '3'))
 GEMINI_BACKOFF_FACTOR = float(os.getenv('GEMINI_BACKOFF_FACTOR', '2.0'))
 GEMINI_CACHE_DURATION = int(os.getenv('GEMINI_CACHE_DURATION', '3600'))  # 1 hour cache

@@ -17,9 +17,12 @@ import {
   Clock,
   User,
   Globe,
-  Award
+  Award,
+  Database,
+  RefreshCw
 } from 'lucide-react';
 import { ComicText } from './magicui/comic-text';
+import { crossDomainCache, cacheUtils } from '../utils/cacheManager';
 
 interface CrossDomainRecommendationsProps {
   userContext: string;
@@ -94,6 +97,25 @@ interface CrossDomainData {
   from_cache?: boolean;
 }
 
+// Cache configuration
+const CACHE_KEY = 'crossdomain_recommendations_cache';
+
+// Generate a hash for the request parameters to use as cache key
+const generateRequestHash = (
+  userContext: string,
+  musicArtists: string[],
+  topScoredArtists: string[],
+  userTags: string[]
+): string => {
+  const requestData = {
+    userContext,
+    musicArtists: musicArtists.sort(),
+    topScoredArtists: topScoredArtists.sort(),
+    userTags: userTags.sort()
+  };
+  return crossDomainCache.generateRequestHash(requestData);
+};
+
 const domainConfig = {
   movie: {
     title: 'Movies',
@@ -147,6 +169,7 @@ export default function CrossDomainRecommendations({
   const [selectedDomain, setSelectedDomain] = useState<string>('');
   const [selectedItem, setSelectedItem] = useState<RecommendationItem | null>(null);
   const [progressInterval, setProgressInterval] = useState<NodeJS.Timeout | null>(null);
+  const [cacheStatus, setCacheStatus] = useState<'loading' | 'cached' | 'fresh' | 'error'>('loading');
 
   useEffect(() => {
     fetchCrossDomainRecommendations();
@@ -174,27 +197,59 @@ export default function CrossDomainRecommendations({
     }
   }, [selectedItem]);
 
-  const clearCache = async () => {
+  const clearServerCache = async () => {
     try {
-      await fetch('http://127.0.0.1:5500/clear-cache', {
+      await fetch('http://localhost:5500/clear-cache', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
       });
     } catch (error) {
-      console.error('Failed to clear cache:', error);
+      console.error('Failed to clear server cache:', error);
     }
   };
 
-  const fetchCrossDomainRecommendations = async (clearCacheFirst = false) => {
+  const fetchCrossDomainRecommendations = async (forceRefresh = false) => {
     setLoading(true);
     setError(null);
     setProgress(0);
+    setCacheStatus('loading');
 
-    // Clear cache first if requested
-    if (clearCacheFirst) {
-      await clearCache();
+    // Generate request hash for caching
+    const requestHash = generateRequestHash(
+      userContext,
+      musicArtists,
+      topScoredArtists || [],
+      userTags || []
+    );
+
+    // Check cache first (unless forcing refresh)
+    if (!forceRefresh) {
+      const cachedData = crossDomainCache.getCachedData<CrossDomainData>(CACHE_KEY, requestHash);
+      if (cachedData) {
+        // Mark data as from cache
+        cachedData.from_cache = true;
+        setRecommendations(cachedData);
+        setCacheStatus('cached');
+        setLoading(false);
+        
+        // Auto-select the first domain that has data
+        const domains = ['movie', 'TV show', 'podcast', 'book', 'music artist'];
+        for (const domain of domains) {
+          if (cachedData.recommendations_by_domain[domain]?.length > 0) {
+            setSelectedDomain(domain);
+            break;
+          }
+        }
+        return;
+      }
+    }
+
+    // Clear cache if forcing refresh
+    if (forceRefresh) {
+      crossDomainCache.clearCache(CACHE_KEY);
+      await clearServerCache();
     }
 
     // Start progress simulation
@@ -207,7 +262,7 @@ export default function CrossDomainRecommendations({
     setProgressInterval(interval);
 
     try {
-      const response = await fetch('http://127.0.0.1:5500/crossdomain-recommendations', {
+      const response = await fetch('http://localhost:5500/crossdomain-recommendations', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -226,17 +281,8 @@ export default function CrossDomainRecommendations({
         try {
           const errorData = await response.json();
           errorMessage = errorData.error || errorMessage;
-          
-          // Check if it's a token-related error
-          if (response.status === 401 || errorMessage.toLowerCase().includes('token') || errorMessage.toLowerCase().includes('unauthorized')) {
-            errorMessage = 'Your Spotify connection has expired. Please reconnect your Spotify account to continue.';
-          }
         } catch (jsonError) {
-          if (response.status === 401) {
-            errorMessage = 'Your Spotify connection has expired. Please reconnect your Spotify account to continue.';
-          } else {
-            errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-          }
+          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
         }
         throw new Error(errorMessage);
       }
@@ -248,10 +294,15 @@ export default function CrossDomainRecommendations({
         throw new Error('Invalid JSON response from server');
       }
       
+      // Cache the fresh data
+      crossDomainCache.setCachedData(CACHE_KEY, requestHash, data);
+      
       setRecommendations(data);
+      setCacheStatus('fresh');
       
       // Debug: Log domain counts
       console.log('Cross-domain recommendations received:', data);
+      console.log('Available domain keys:', Object.keys(data.recommendations_by_domain || {}));
       const domains = ['movie', 'TV show', 'podcast', 'book', 'music artist'];
       domains.forEach(domain => {
         const count = data.recommendations_by_domain[domain]?.length || 0;
@@ -267,6 +318,7 @@ export default function CrossDomainRecommendations({
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
+      setCacheStatus('error');
     } finally {
       setLoading(false);
       setProgress(100);
@@ -281,6 +333,36 @@ export default function CrossDomainRecommendations({
     setSelectedDomain(domain);
     if (!recommendations) {
       fetchCrossDomainRecommendations();
+    }
+  };
+
+  const getCacheStatusText = () => {
+    switch (cacheStatus) {
+      case 'cached':
+        return '📦 From Cache';
+      case 'fresh':
+        return '🆕 Fresh Data';
+      case 'loading':
+        return '⏳ Loading...';
+      case 'error':
+        return '❌ Error';
+      default:
+        return '';
+    }
+  };
+
+  const getCacheStatusColor = () => {
+    switch (cacheStatus) {
+      case 'cached':
+        return 'bg-blue-100 text-blue-800 border-blue-300';
+      case 'fresh':
+        return 'bg-green-100 text-green-800 border-green-300';
+      case 'loading':
+        return 'bg-yellow-100 text-yellow-800 border-yellow-300';
+      case 'error':
+        return 'bg-red-100 text-red-800 border-red-300';
+      default:
+        return 'bg-gray-100 text-gray-800 border-gray-300';
     }
   };
 
@@ -529,7 +611,7 @@ export default function CrossDomainRecommendations({
               {(selectedItem.properties?.url || selectedItem.properties?.spotify_url || selectedItem.url) && (
                 <div className="flex gap-2">
                   {selectedItem.properties?.url && (
-                    <Button asChild className="bg-blue-500 hover:bg-blue-600 text-white">
+                    <Button asChild className="bg-blue-500 hover:bg-blue-600 text-white font-bold border-2 border-black comic-shadow transition-colors">
                       <a href={selectedItem.properties.url} target="_blank" rel="noopener noreferrer">
                         <ExternalLink className="w-4 h-4 mr-2" />
                         Visit Website
@@ -537,7 +619,7 @@ export default function CrossDomainRecommendations({
                     </Button>
                   )}
                   {selectedItem.properties?.spotify_url && (
-                    <Button asChild className="bg-green-500 hover:bg-green-600 text-white">
+                    <Button asChild className="bg-green-500 hover:bg-green-600 text-white font-bold border-2 border-black comic-shadow transition-colors">
                       <a href={selectedItem.properties.spotify_url} target="_blank" rel="noopener noreferrer">
                         <Music className="w-4 h-4 mr-2" />
                         Open in Spotify
@@ -566,13 +648,41 @@ export default function CrossDomainRecommendations({
         <p className="text-sm text-gray-600 font-comic">
           Explore movies, TV shows, podcasts, books, and more artists that match your vibe
         </p>
-        <Button 
-          onClick={() => fetchCrossDomainRecommendations(true)}
-          className="mt-3 bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg border-2 border-black comic-shadow"
-          disabled={loading}
-        >
-          🔄 Refresh (Clear Cache)
-        </Button>
+        
+        {/* Cache Status and Controls */}
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mt-4">
+          {/* Cache Status Indicator */}
+          {cacheStatus !== 'loading' && (
+            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border-2 font-bold text-sm ${getCacheStatusColor()}`}>
+              <Database className="w-4 h-4" />
+              {getCacheStatusText()}
+            </div>
+          )}
+          
+          {/* Refresh Button */}
+          <Button 
+            onClick={() => fetchCrossDomainRecommendations(true)}
+            className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg border-2 border-black comic-shadow flex items-center gap-2 transition-colors"
+            disabled={loading}
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            {loading ? 'Refreshing...' : 'Refresh (Clear Cache)'}
+          </Button>
+          
+          {/* Clear Local Cache Only */}
+          <Button 
+            onClick={() => {
+              crossDomainCache.clearCache(CACHE_KEY);
+              setCacheStatus('loading');
+              fetchCrossDomainRecommendations();
+            }}
+            variant="outline"
+            className="border-2 border-black comic-shadow text-sm"
+            disabled={loading}
+          >
+            Clear Local Cache
+          </Button>
+        </div>
       </div>
 
       {/* Loading State */}
@@ -592,25 +702,24 @@ export default function CrossDomainRecommendations({
         <div className="text-center py-8">
           <div className="bg-red-50 border-2 border-red-500 rounded-lg p-4 max-w-md mx-auto">
             <p className="text-red-700 font-bold text-sm">{error}</p>
-            <div className="flex gap-2 mt-3 justify-center">
+            <div className="flex flex-col sm:flex-row gap-2 mt-3 justify-center">
               <Button 
                 onClick={() => fetchCrossDomainRecommendations()}
-                className="bg-red-500 hover:bg-red-600 text-white"
+                className="bg-red-500 hover:bg-red-600 text-white font-bold border-2 border-black comic-shadow transition-colors"
               >
                 Try Again
               </Button>
-              {error.includes('Spotify connection has expired') && (
-                <Button 
-                  onClick={() => {
-                    // Clear the expired token and redirect to reconnect
-                    localStorage.removeItem('spotify_token');
-                    window.location.href = '/';
-                  }}
-                  className="bg-green-500 hover:bg-green-600 text-white"
-                >
-                  Reconnect Spotify
-                </Button>
-              )}
+              <Button 
+                onClick={() => {
+                  crossDomainCache.clearCache(CACHE_KEY);
+                  setError(null);
+                  fetchCrossDomainRecommendations();
+                }}
+                variant="outline"
+                className="border-2 border-black"
+              >
+                Clear Cache & Retry
+              </Button>
             </div>
           </div>
         </div>
@@ -681,12 +790,24 @@ export default function CrossDomainRecommendations({
                     <p className="text-yellow-600 text-sm mb-4">
                       We couldn't find any cross-domain recommendations for your current taste profile.
                     </p>
-                    <Button 
-                      onClick={() => fetchCrossDomainRecommendations(true)}
-                      className="bg-yellow-500 hover:bg-yellow-600 text-white"
-                    >
-                      Try Again with Fresh Data
-                    </Button>
+                    <div className="flex flex-col sm:flex-row gap-2 justify-center">
+                      <Button 
+                        onClick={() => fetchCrossDomainRecommendations(true)}
+                        className="bg-yellow-500 hover:bg-yellow-600 text-white"
+                      >
+                        Try Again with Fresh Data
+                      </Button>
+                      <Button 
+                        onClick={() => {
+                          crossDomainCache.clearCache(CACHE_KEY);
+                          fetchCrossDomainRecommendations();
+                        }}
+                        variant="outline"
+                        className="border-2 border-black"
+                      >
+                        Clear Cache & Retry
+                      </Button>
+                    </div>
                   </div>
                 </div>
               );
@@ -695,13 +816,23 @@ export default function CrossDomainRecommendations({
           })()}
 
           {/* Cache Info */}
-          {recommendations.from_cache && (
-            <div className="text-center mt-4">
+          <div className="text-center mt-4">
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-2">
+              {recommendations.from_cache && (
+                <Badge variant="outline" className="text-xs">
+                  📦 From Cache • {new Date(recommendations.generated_timestamp || '').toLocaleString()}
+                </Badge>
+              )}
+              {!recommendations.from_cache && recommendations.generated_timestamp && (
+                <Badge variant="outline" className="text-xs">
+                  🆕 Fresh Data • {new Date(recommendations.generated_timestamp).toLocaleString()}
+                </Badge>
+              )}
               <Badge variant="outline" className="text-xs">
-                From Cache • {new Date(recommendations.generated_timestamp || '').toLocaleString()}
+                Cache expires in {crossDomainCache.getTimeUntilExpiry(CACHE_KEY)} minutes
               </Badge>
             </div>
-          )}
+          </div>
         </div>
       )}
 

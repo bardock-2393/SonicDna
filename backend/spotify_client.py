@@ -4,7 +4,7 @@ import time
 from utils import retry_on_failure
 
 def exchange_code_for_token(code, client_id, client_secret, redirect_uri):
-    """Exchange authorization code for access token and refresh token"""
+    """Exchange authorization code for access token"""
     url = "https://accounts.spotify.com/api/token"
     
     # Encode client credentials
@@ -24,55 +24,10 @@ def exchange_code_for_token(code, client_id, client_secret, redirect_uri):
     try:
         response = requests.post(url, headers=headers, data=data, timeout=5)
         response.raise_for_status()
-        token_data = response.json()
-        
-        # Return both access token and refresh token
-        return {
-            'access_token': token_data.get('access_token'),
-            'refresh_token': token_data.get('refresh_token'),
-            'expires_in': token_data.get('expires_in', 3600),  # Default 1 hour
-            'token_type': token_data.get('token_type', 'Bearer')
-        }
+        return response.json()
     except Exception as e:
         print(f"Error exchanging code for token: {e}")
         return None
-
-def refresh_access_token(refresh_token, client_id, client_secret):
-    """Refresh access token using refresh token"""
-    url = "https://accounts.spotify.com/api/token"
-    
-    # Encode client credentials
-    credentials = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
-    
-    headers = {
-        "Authorization": f"Basic {credentials}",
-        "Content-Type": "application/x-www-form-urlencoded"
-    }
-    
-    data = {
-        "grant_type": "refresh_token",
-        "refresh_token": refresh_token
-    }
-    
-    try:
-        response = requests.post(url, headers=headers, data=data, timeout=5)
-        response.raise_for_status()
-        return response.json()
-    except Exception as e:
-        print(f"Error refreshing access token: {e}")
-        return None
-
-def validate_token(access_token):
-    """Validate if access token is still valid"""
-    url = "https://api.spotify.com/v1/me"
-    headers = {"Authorization": f"Bearer {access_token}"}
-    
-    try:
-        response = requests.get(url, headers=headers, timeout=5)
-        return response.status_code == 200
-    except Exception as e:
-        print(f"Error validating token: {e}")
-        return False
 
 def get_spotify_user_id(access_token):
     """Get Spotify user ID"""
@@ -572,16 +527,3 @@ def get_spotify_playlist_by_id(access_token, playlist_id, market=None):
     except requests.exceptions.RequestException as e:
         print(f"Error getting Spotify playlist by ID: {e}")
         return None 
-
-def get_valid_access_token(user_id, client_id, client_secret):
-    """Get a valid access token, refreshing if necessary"""
-    # This would typically check a database for stored tokens
-    # For now, we'll return None to indicate token needs refresh
-    return None
-
-def store_user_tokens(user_id, access_token, refresh_token, expires_in):
-    """Store user tokens (would typically use a database)"""
-    # In a real implementation, this would store in database
-    # For now, we'll just print for debugging
-    print(f"Storing tokens for user {user_id}: expires in {expires_in} seconds")
-    return True 

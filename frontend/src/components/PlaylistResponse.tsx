@@ -18,22 +18,31 @@ const QlooPowerShowcase = ({ data }: { data: PlaylistData }) => {
   const showcase = data.qloo_power_showcase;
   
   return (
-    <div className="bg-gradient-to-r from-yellow-200 via-orange-200 to-red-200 text-black p-3 sm:p-6 rounded-xl mb-4 sm:mb-6 comic-shadow comic-border">
-      <div className="flex items-center mb-3 sm:mb-4">
-        <div className="w-6 h-6 sm:w-8 sm:h-8 bg-black/20 rounded-full flex items-center justify-center mr-2 sm:mr-3">
-          <Music className="w-4 h-4 sm:w-5 sm:h-5" />
+    <div className="bg-gradient-to-r from-yellow-200 via-orange-200 to-red-200 text-black p-2 sm:p-4 rounded-xl mb-2 sm:mb-4 comic-shadow comic-border">
+      <div className="flex items-center justify-center mb-2 sm:mb-3">
+        <div className="w-5 h-5 sm:w-6 sm:h-6 bg-black/20 rounded-full flex items-center justify-center mr-2">
+          <Music className="w-3 h-3 sm:w-4 sm:h-4" />
         </div>
-        <h3 className="text-lg sm:text-xl font-bold">🎵 Qloo AI Power Showcase</h3>
+        <h3 className="text-base sm:text-lg font-bold text-center">
+          🎵 Qloo AI Power Showcase
+          {showcase.location_awareness && <span className="text-sm ml-2 text-blue-600">📍</span>}
+        </h3>
       </div>
       
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 sm:gap-3 mb-3 sm:mb-4">
-        <div className="flex items-center bg-white/80 rounded-lg p-2 sm:p-3 comic-border">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-1.5 sm:gap-2 mb-2 sm:mb-3 justify-items-center">
+        <div className={`flex items-center bg-white/80 rounded-lg p-2 sm:p-3 comic-border ${showcase.cultural_intelligence ? 'ring-2 ring-green-400 shadow-lg' : ''}`}>
           <CheckCircle className="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2 text-green-600" />
-          <span className="text-xs sm:text-sm font-bold">Cultural Intelligence</span>
+          <span className="text-xs sm:text-sm font-bold">
+            Cultural Intelligence
+            {showcase.cultural_intelligence && <span className="text-xs ml-1 text-green-600">🌍</span>}
+          </span>
         </div>
-        <div className="flex items-center bg-white/80 rounded-lg p-2 sm:p-3 comic-border">
+        <div className={`flex items-center bg-white/80 rounded-lg p-2 sm:p-3 comic-border ${showcase.location_awareness ? 'ring-2 ring-blue-400 shadow-lg' : ''}`}>
           <CheckCircle className="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2 text-green-600" />
-          <span className="text-xs sm:text-sm font-bold">Location Awareness</span>
+          <span className="text-xs sm:text-sm font-bold">
+            Location Awareness
+            {showcase.location_awareness && <span className="text-xs ml-1 text-blue-600">📍</span>}
+          </span>
         </div>
         <div className="flex items-center bg-white/80 rounded-lg p-2 sm:p-3 comic-border">
           <CheckCircle className="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2 text-green-600" />
@@ -53,31 +62,37 @@ const QlooPowerShowcase = ({ data }: { data: PlaylistData }) => {
         </div>
       </div>
       
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4 text-center">
-        <div className="bg-white/80 rounded-lg p-2 sm:p-3 comic-border">
-          <div className="text-lg sm:text-2xl font-bold text-yellow-600">{showcase.total_recommendations}</div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:gap-2 text-center justify-items-center">
+        <div className="bg-white/80 rounded-lg p-1.5 sm:p-2 comic-border">
+          <div className="text-base sm:text-xl font-bold text-yellow-600">{showcase.total_recommendations}</div>
           <div className="text-xs font-bold">Total Recommendations</div>
         </div>
-        <div className="bg-white/80 rounded-lg p-2 sm:p-3 comic-border">
-          <div className="text-lg sm:text-2xl font-bold text-green-600">{showcase.cultural_tags_count}</div>
+        <div className={`bg-white/80 rounded-lg p-1.5 sm:p-2 comic-border ${showcase.cultural_tags_count > 0 ? 'ring-2 ring-green-400 shadow-lg' : ''}`}>
+          <div className={`text-base sm:text-xl font-bold ${showcase.cultural_tags_count > 0 ? 'text-green-700' : 'text-green-600'}`}>
+            {showcase.cultural_tags_count}
+            {showcase.cultural_tags_count > 0 && <span className="text-sm ml-1">🌍</span>}
+          </div>
           <div className="text-xs font-bold">Cultural Tags</div>
         </div>
-        <div className="bg-white/80 rounded-lg p-2 sm:p-3 comic-border">
-          <div className="text-lg sm:text-2xl font-bold text-blue-600">{showcase.location_based_count}</div>
+        <div className={`bg-white/80 rounded-lg p-1.5 sm:p-2 comic-border ${showcase.location_based_count > 0 ? 'ring-2 ring-blue-400 shadow-lg' : ''}`}>
+          <div className={`text-base sm:text-xl font-bold ${showcase.location_based_count > 0 ? 'text-blue-700' : 'text-blue-600'}`}>
+            {showcase.location_based_count}
+            {showcase.location_based_count > 0 && <span className="text-sm ml-1">📍</span>}
+          </div>
           <div className="text-xs font-bold">Location-Based</div>
         </div>
-        <div className="bg-white/80 rounded-lg p-2 sm:p-3 comic-border">
-          <div className="text-lg sm:text-2xl font-bold text-red-600">{data.enhanced_features?.length || 0}</div>
+        <div className="bg-white/80 rounded-lg p-1.5 sm:p-2 comic-border">
+          <div className="text-base sm:text-xl font-bold text-red-600">{data.enhanced_features?.length || 0}</div>
           <div className="text-xs font-bold">AI Features</div>
         </div>
       </div>
       
       {data.cultural_insights && data.cultural_insights.length > 0 && (
-        <div className="mt-3 sm:mt-4 bg-white/80 rounded-lg p-3 sm:p-4 comic-border">
-          <h4 className="font-semibold mb-2 text-sm sm:text-base">🌍 Cultural Insights for {data.location_used}</h4>
+        <div className="mt-2 sm:mt-3 bg-white/80 rounded-lg p-2 sm:p-3 comic-border text-center">
+          <h4 className="font-semibold mb-1.5 text-sm sm:text-base">🌍 Cultural Insights for {data.location_used}</h4>
           <div className="text-xs sm:text-sm font-bold">
             {data.cultural_insights.slice(0, 3).map((insight: any, index: number) => (
-              <div key={index} className="mb-1">
+              <div key={index} className="mb-0.5">
                 • {insight.name || insight.title || 'Cultural trend'}
               </div>
             ))}
@@ -86,8 +101,8 @@ const QlooPowerShowcase = ({ data }: { data: PlaylistData }) => {
       )}
       
       {data.cultural_context && (
-        <div className="mt-3 sm:mt-4 bg-white/80 rounded-lg p-3 sm:p-4 comic-border">
-          <h4 className="font-semibold mb-2 text-sm sm:text-base">🎭 Cultural Context</h4>
+        <div className="mt-2 sm:mt-3 bg-white/80 rounded-lg p-2 sm:p-3 comic-border text-center">
+          <h4 className="font-semibold mb-1.5 text-sm sm:text-base">🎭 Cultural Context</h4>
           <div className="text-xs sm:text-sm font-bold">{data.cultural_context}</div>
         </div>
       )}
@@ -109,7 +124,7 @@ interface Track {
 interface PlaylistData {
   playlist: Track[];
   tags: string[];
-  qloo_artists: string[];
+  qloo_artists: Array<{ name: string; [key: string]: any }>;
   context_type: string;
   from_cache?: boolean;
   cache_timestamp?: string;
@@ -247,21 +262,18 @@ export default function PlaylistResponse({ data }: PlaylistResponseProps) {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [showCrossDomain, setShowCrossDomain] = useState(false);
-  const [userContext, setUserContext] = useState("");
   const [spotifyToken, setSpotifyToken] = useState("");
 
-  // Get user context and Spotify token from localStorage
+  // Get Spotify token from localStorage
   useEffect(() => {
-    const storedContext = localStorage.getItem('user_context');
     const storedToken = localStorage.getItem('spotify_token');
-    
-    if (storedContext) {
-      setUserContext(storedContext);
-    }
     if (storedToken) {
       setSpotifyToken(storedToken);
     }
   }, []);
+
+  // Use the context type from the music recommendation data as user context
+  const userContext = data.context_type || "music recommendations";
 
   // Safety check: ensure playlist data exists and has tracks
   if (!data || !data.playlist || !Array.isArray(data.playlist) || data.playlist.length === 0) {
@@ -283,12 +295,17 @@ export default function PlaylistResponse({ data }: PlaylistResponseProps) {
 
   // Location Information Display
   const locationInfo = data.location_used && (
-    <div className="flex items-center gap-2 text-sm text-gray-600 mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-      <span className="text-blue-600">🌍</span>
-      <span>Location-based recommendations from: <strong>{data.location_used}</strong></span>
+    <div className="flex items-center justify-center gap-2 text-sm text-gray-600 mb-2 p-2 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border-2 border-blue-300 shadow-sm">
+      <span className="text-blue-600 text-base">📍</span>
+      <span className="font-semibold">Location-based recommendations from: <strong className="text-blue-700">{data.location_used}</strong></span>
       {data.user_country && (
-        <span className="text-xs bg-blue-100 px-2 py-1 rounded">
+        <span className="text-xs bg-blue-200 px-1.5 py-0.5 rounded-full font-medium text-blue-800">
           {data.user_country}
+        </span>
+      )}
+      {data.qloo_power_showcase?.location_based_count > 0 && (
+        <span className="text-xs bg-green-200 px-1.5 py-0.5 rounded-full font-medium text-green-800">
+          {data.qloo_power_showcase.location_based_count} location-aware
         </span>
       )}
     </div>
@@ -471,11 +488,11 @@ export default function PlaylistResponse({ data }: PlaylistResponseProps) {
   const cat = findMatchingCat(data.context_type, data.tags);
 
   return (
-    <div className="w-full max-w-6xl mx-auto py-2 sm:py-8 px-2 sm:px-6 overflow-x-hidden">
+    <div className="w-full max-w-6xl mx-auto py-1 sm:py-4 px-2 sm:px-4 overflow-x-hidden">
       {/* ENHANCED: Show Qloo power showcase */}
       <QlooPowerShowcase data={data} />
       
-      <div className="mb-4 sm:mb-8 text-center">
+      <div className="mb-2 sm:mb-4 text-center">
         <div className="w-full text-center break-words">
           <ComicText
             fontSize={3.5}
@@ -491,7 +508,7 @@ export default function PlaylistResponse({ data }: PlaylistResponseProps) {
         </div>
         
         {/* Cache Indicator */}
-        <div className="flex justify-center mt-3 mb-2">
+        <div className="flex justify-center mt-2 mb-1">
           <CacheIndicator 
             fromCache={data.from_cache || false} 
             timestamp={data.cache_timestamp || data.generated_timestamp}
@@ -502,31 +519,34 @@ export default function PlaylistResponse({ data }: PlaylistResponseProps) {
         {locationInfo}
         
         {/* Cat meme for mood - moved here */}
-        <div className="flex flex-col items-center justify-center mt-3 sm:mt-4 mb-2">
-          <img src={cat.url} alt={cat.description} className="w-20 h-20 sm:w-24 sm:h-24 md:w-32 md:h-32 rounded-xl border-2 border-black mb-2 object-cover shadow-lg" />
-          <div className="text-sm sm:text-base md:text-lg font-bold text-black text-center comic-shadow max-w-xs px-2">{cat.description}</div>
+        <div className="flex flex-col items-center justify-center mt-2 sm:mt-3 mb-1">
+          <img src={cat.url} alt={cat.description} className="w-16 h-16 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-xl border-2 border-black mb-1 object-cover shadow-lg" />
+          <div className="text-sm sm:text-base font-bold text-black text-center comic-shadow max-w-xs px-2">{cat.description}</div>
         </div>
-        <p className="text-sm sm:text-base md:text-lg lg:text-xl text-black font-bold mb-3 sm:mb-4 comic-shadow px-2 sm:px-0">
+        <p className="text-sm sm:text-base md:text-lg text-black font-bold mb-2 sm:mb-3 comic-shadow px-2 sm:px-0">
           {sortedPlaylist.length} tracks curated by AI • Sorted by relevance score
         </p>
         
 
         
         {/* Action Buttons */}
-        <div className="mb-3 sm:mb-4 flex justify-center gap-3">
+        <div className="mb-2 sm:mb-3 flex justify-center gap-2 sm:gap-3">
           <Dialog open={isOpen} onOpenChange={handleDialogOpen}>
             <DialogTrigger asChild>
-              <Button className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 sm:py-3 px-4 sm:px-6 rounded-lg border-2 border-black comic-shadow flex items-center gap-2 text-sm sm:text-base">
+              <Button className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 sm:py-3 px-4 sm:px-6 rounded-lg border-2 border-black comic-shadow flex items-center gap-2 text-sm sm:text-base transition-colors">
                 <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
                 Add to Spotify Playlist
               </Button>
             </DialogTrigger>
-            <DialogContent className="bg-yellow-100 border-4 border-black comic-shadow max-w-[95vw] sm:max-w-md mx-auto p-4 sm:p-6">
+            <DialogContent 
+              className="bg-yellow-100 border-4 border-black comic-shadow max-w-[95vw] sm:max-w-md mx-auto p-4 sm:p-6"
+              aria-describedby="playlist-description"
+            >
               <DialogHeader>
                 <DialogTitle className="text-lg sm:text-xl font-bold text-black comic-shadow text-center">
                   Create Spotify Playlist
                 </DialogTitle>
-                <p className="text-xs text-gray-600 text-center mt-2">
+                <p id="playlist-description" className="text-xs text-gray-600 text-center mt-2">
                   Note: You need to grant playlist creation permissions when connecting to Spotify
                 </p>
               </DialogHeader>
@@ -612,7 +632,7 @@ export default function PlaylistResponse({ data }: PlaylistResponseProps) {
                 <Button
                   onClick={handleCreatePlaylist}
                   disabled={isCreating || !playlistName.trim() || selectedTracks.size === 0}
-                  className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-lg border-2 border-black comic-shadow disabled:bg-gray-400 disabled:cursor-not-allowed"
+                  className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-lg border-2 border-black comic-shadow disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
                 >
                   {isCreating ? (
                     <div className="flex items-center gap-2">
@@ -632,7 +652,7 @@ export default function PlaylistResponse({ data }: PlaylistResponseProps) {
           
           <Button 
             onClick={() => setShowCrossDomain(true)}
-            className="bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 sm:py-3 px-4 sm:px-6 rounded-lg border-2 border-black comic-shadow flex items-center gap-2 text-sm sm:text-base"
+            className="bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 sm:py-3 px-4 sm:px-6 rounded-lg border-2 border-black comic-shadow flex items-center gap-2 text-sm sm:text-base transition-colors"
             disabled={!spotifyToken}
           >
             <Sparkles className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -640,7 +660,7 @@ export default function PlaylistResponse({ data }: PlaylistResponseProps) {
           </Button>
         </div>
 
-        <div className="flex flex-wrap justify-center gap-1 sm:gap-1.5 lg:gap-2 mb-2 px-1 sm:px-2 lg:px-0">
+        <div className="flex flex-wrap justify-center gap-1 sm:gap-1.5 lg:gap-2 mb-1 px-1 sm:px-2 lg:px-0">
           {data.tags.map((tag, idx) => (
             <span key={idx} className="bg-yellow-200 border-2 border-black rounded-full px-1.5 py-0.5 sm:px-2 sm:py-0.5 lg:px-3 lg:py-1 text-xs font-bold text-black comic-shadow">
               {tag}
@@ -648,11 +668,11 @@ export default function PlaylistResponse({ data }: PlaylistResponseProps) {
           ))}
         </div>
         {data.qloo_artists.length > 0 && (
-          <div className="flex flex-wrap justify-center gap-1 sm:gap-1.5 lg:gap-2 items-center mt-2 px-1 sm:px-2 lg:px-0">
+          <div className="flex flex-wrap justify-center gap-1 sm:gap-1.5 lg:gap-2 items-center mt-1 px-1 sm:px-2 lg:px-0">
             <span className="text-xs font-bold text-black mr-1 sm:mr-2">Similar artists:</span>
             {data.qloo_artists.map((artist, idx) => (
               <span key={idx} className="bg-blue-200 border-2 border-black rounded-full px-1 py-0.5 sm:px-1.5 sm:py-0.5 lg:px-2 text-xs font-bold text-black comic-shadow">
-                {artist}
+                {typeof artist === 'string' ? artist : artist.name}
               </span>
             ))}
           </div>
@@ -660,7 +680,7 @@ export default function PlaylistResponse({ data }: PlaylistResponseProps) {
         
         {/* Top Scored Artists Display */}
         {topScoredArtists.length > 0 && (
-          <div className="flex flex-wrap justify-center gap-1 sm:gap-1.5 lg:gap-2 items-center mt-2 px-1 sm:px-2 lg:px-0">
+          <div className="flex flex-wrap justify-center gap-1 sm:gap-1.5 lg:gap-2 items-center mt-1 px-1 sm:px-2 lg:px-0">
             <span className="text-xs font-bold text-black mr-1 sm:mr-2">Top scored artists:</span>
             {topScoredArtists.map((artist, idx) => (
               <span key={idx} className="bg-green-200 border-2 border-black rounded-full px-1 py-0.5 sm:px-1.5 sm:py-0.5 lg:px-2 text-xs font-bold text-black comic-shadow">
@@ -674,14 +694,14 @@ export default function PlaylistResponse({ data }: PlaylistResponseProps) {
       </div>
       
       {/* Mobile Layout - Compact Scrollable List */}
-      <div className="lg:hidden space-y-2 max-h-[40vh] sm:max-h-[50vh] overflow-y-auto px-1">
+      <div className="lg:hidden space-y-1 max-h-[40vh] sm:max-h-[50vh] overflow-y-auto px-1">
         {sortedPlaylist.map((track, idx) => (
           <div key={track.name + idx} className="w-full">
-            {/* Mobile Compact Card */}
-            <div
-              style={{ background: comicBackgrounds[idx % comicBackgrounds.length] }}
-              className="w-full h-16 sm:h-20 md:h-24 rounded-xl border-4 border-black shadow-lg comic-shadow flex items-center justify-center overflow-hidden p-2 sm:p-3"
-            >
+                    {/* Mobile Compact Card */}
+        <div
+          style={{ background: comicBackgrounds[idx % comicBackgrounds.length] }}
+          className="w-full h-14 sm:h-18 md:h-22 rounded-xl border-4 border-black shadow-lg comic-shadow flex items-center justify-center overflow-hidden p-1.5 sm:p-2"
+        >
               {/* Compact Mobile Content */}
               <div className="flex flex-row h-full w-full items-center justify-center text-black gap-2 sm:gap-3">
                 {/* Small Album Art */}
@@ -689,7 +709,7 @@ export default function PlaylistResponse({ data }: PlaylistResponseProps) {
                   <img
                     src={track.album_art_url || '/placeholder.svg'}
                     alt={track.album_name}
-                    className="w-10 h-10 sm:w-12 sm:h-12 md:w-16 md:h-16 rounded-lg border-2 border-black object-cover shadow"
+                    className="w-8 h-8 sm:w-10 sm:h-10 md:w-14 md:h-14 rounded-lg border-2 border-black object-cover shadow"
                     onError={(e) => {
                       e.currentTarget.src = '/placeholder.svg';
                     }}
@@ -708,7 +728,7 @@ export default function PlaylistResponse({ data }: PlaylistResponseProps) {
                 
                 {/* Compact Score */}
                 <div className="flex-shrink-0">
-                  <div className="text-xs text-black font-bold bg-white/80 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded comic-shadow border border-black">
+                  <div className="text-xs text-black font-bold bg-white/80 px-1 sm:px-1.5 py-0.5 rounded comic-shadow border border-black">
                     ⭐ {track.context_score.toFixed(1)}
                   </div>
                 </div>
@@ -719,12 +739,12 @@ export default function PlaylistResponse({ data }: PlaylistResponseProps) {
                     href={track.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="px-1.5 sm:px-2 py-0.5 sm:py-1 bg-yellow-200 text-black font-bold rounded border-2 border-black text-xs comic-shadow flex items-center justify-center"
+                    className="px-1 sm:px-1.5 py-0.5 bg-yellow-200 text-black font-bold rounded border-2 border-black text-xs comic-shadow flex items-center justify-center"
                   >
                     <img 
                       src="/icon/spotify.png" 
                       alt="Spotify" 
-                      className="w-3 h-3 sm:w-4 sm:h-4 md:w-5 md:h-5"
+                      className="w-3 h-3 sm:w-4 sm:h-4"
                     />
                   </a>
                 </div>
@@ -742,18 +762,21 @@ export default function PlaylistResponse({ data }: PlaylistResponseProps) {
       {/* Cross-Domain Recommendations */}
       {showCrossDomain && (
         <Dialog open={showCrossDomain} onOpenChange={setShowCrossDomain}>
-          <DialogContent className="bg-yellow-100 border-4 border-black comic-shadow max-w-[95vw] sm:max-w-6xl mx-auto p-4 sm:p-6 max-h-[90vh] overflow-y-auto">
+          <DialogContent 
+            className="bg-yellow-100 border-4 border-black comic-shadow max-w-[95vw] sm:max-w-6xl mx-auto p-4 sm:p-6 max-h-[90vh] overflow-y-auto"
+            aria-describedby="cross-domain-description"
+          >
             <DialogHeader>
               <DialogTitle className="text-lg sm:text-xl font-bold text-black comic-shadow text-center">
                 Cross-Domain Recommendations
               </DialogTitle>
-              <p className="text-xs text-gray-600 text-center mt-2">
+              <p id="cross-domain-description" className="text-xs text-gray-600 text-center mt-2">
                 Discover movies, books, TV shows, and podcasts based on your music taste
               </p>
             </DialogHeader>
             <CrossDomainRecommendations
               userContext={userContext}
-              musicArtists={data.qloo_artists.slice(0, 5)}
+              musicArtists={data.qloo_artists.slice(0, 5).map(artist => typeof artist === 'string' ? artist : artist.name)}
               topScoredArtists={topScoredArtists.slice(0, 5)}
               userTags={data.tags}
               spotifyToken={spotifyToken}

@@ -3,9 +3,12 @@ import ChatInput from './ChatInput';
 import ChatBubble from './ChatBubble';
 import TypingIndicator from './TypingIndicator';
 import PlaylistResponse from './PlaylistResponse';
+import RecommendationHistory from './RecommendationHistory';
+import NewArtistsIndicator from './NewArtistsIndicator';
+import UserTasteGraph from './UserTasteGraph';
 import { PlaceholdersAndVanishInput } from './ui/placeholders-and-vanish-input';
 import { MultiStepLoader } from './ui/multi-step-loader';
-import { Music } from 'lucide-react';
+import { Music, History, Sparkles, BarChart3 } from 'lucide-react';
 import heroImage from '@/assets/hero-music.jpg';
 // Fix imports to use local UI components
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -18,6 +21,9 @@ import { toast } from "@/components/ui/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface Message {
   id: string;
@@ -34,16 +40,37 @@ const MusicDashboard: React.FC = () => {
   const [spotifyUserId, setSpotifyUserId] = useState<string | null>(null);
   const [checkingToken, setCheckingToken] = useState(false);
   const [spotifyUserProfile, setSpotifyUserProfile] = useState<{ name: string; avatar: string | null } | null>(null);
-  const [tokenExpiryTime, setTokenExpiryTime] = useState<Date | null>(null);
   const [showCredsModal, setShowCredsModal] = useState(false);
   const [clientId, setClientId] = useState(localStorage.getItem('spotify_client_id') || '');
   const [clientSecret, setClientSecret] = useState(localStorage.getItem('spotify_client_secret') || '');
+  const [rightPanelOpen, setRightPanelOpen] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [panelPosition, setPanelPosition] = useState(0); // 0 = closed, 1 = fully open
 
   // Keep caching simple - no complex UI for users
 
   // Refresh recommendations function
   const refreshCrossDomainRecs = async () => {
-    if (!spotifyToken) return;
+    if (!spotifyToken) {
+      toast({
+        title: "No Spotify Token",
+        description: "Please connect to Spotify first to get cross-domain recommendations.",
+        duration: 3000,
+      });
+      return;
+    }
+    
+    // Check token validity before proceeding
+    const isTokenValid = await checkSpotifyTokenValidity(spotifyToken);
+    if (!isTokenValid) {
+      toast({
+        title: "Invalid Spotify Token",
+        description: "Your Spotify connection has expired. Please reconnect to Spotify.",
+        duration: 3000,
+      });
+      return;
+    }
+    
     if (crossDomainLoading) return; // Prevent multiple simultaneous calls
 
     setCrossDomainLoading(true);
@@ -130,12 +157,21 @@ const MusicDashboard: React.FC = () => {
         body: JSON.stringify({ user_id: spotifyUserId })
       });
 
+      // Prepare data for cross-domain recommendations
+      const musicArtists = crossDomainRecs?.top_artists || [];
+      const topScoredArtists = crossDomainRecs?.top_artists_with_images?.map(artist => artist.name) || [];
+      const userContext = "music discovery and cross-domain recommendations";
+
       // Fetch fresh recommendations
       const res = await fetch('http://localhost:5500/crossdomain-recommendations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           spotify_token: spotifyToken,
+          user_context: userContext,
+          music_artists: musicArtists,
+          top_scored_artists: topScoredArtists,
+          user_tags: [], // Empty for now, can be enhanced later
           limit: 5,  // Reduced from 10 to 5 for faster response
         }),
       });
@@ -273,7 +309,7 @@ const MusicDashboard: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const res = await fetch('http://localhost:5500/musicrecommandation', {
+              const res = await fetch('http://localhost:5500/musicrecommendation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -328,30 +364,58 @@ const MusicDashboard: React.FC = () => {
     }
   };
 
-  // Helper: Check if Spotify token is valid
+  // Helper: Check if Spotify token is valid and refresh if needed
   const checkSpotifyTokenValidity = async (token: string | null) => {
     if (!token) return false;
     setCheckingToken(true);
     try {
-      // Fetch profile from backend instead of Spotify API directly
+      // First check if token is valid and refresh if needed
+      const refreshToken = localStorage.getItem('spotify_refresh_token');
+      const checkRes = await fetch('http://localhost:5500/check-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          access_token: token,
+          refresh_token: refreshToken 
+        })
+      });
+      
+      let currentToken = token;
+      
+      if (checkRes.ok) {
+        const checkData = await checkRes.json();
+        if (!checkData.valid && checkData.refreshed) {
+          // Token was refreshed, update localStorage and current token
+          localStorage.setItem('spotify_token', checkData.access_token);
+          if (checkData.refresh_token) {
+            localStorage.setItem('spotify_refresh_token', checkData.refresh_token);
+          }
+          currentToken = checkData.access_token;
+          setSpotifyToken(checkData.access_token);
+        } else if (!checkData.valid && !checkData.refreshed) {
+          // Token is invalid and couldn't be refreshed
+          setSpotifyUserProfile(null);
+          setSpotifyToken(null);
+          localStorage.removeItem('spotify_token');
+          localStorage.removeItem('spotify_refresh_token');
+          return false;
+        }
+      }
+      
+      // Now fetch profile with the valid token
       const res = await fetch('http://localhost:5500/spotify-profile', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ spotify_token: token })
+        body: JSON.stringify({ spotify_token: currentToken })
       });
+      
       if (res.status === 401 || res.status === 400) {
-        // Token is expired or invalid, clear it
-        localStorage.removeItem('spotify_token');
-        setSpotifyToken(null);
         setSpotifyUserProfile(null);
-        toast({
-          title: "Spotify Token Expired",
-          description: "Spotify tokens expire after 8 hours. Please reconnect your account to continue.",
-          duration: 5000,
-        });
         return false;
       }
+      
       const data = await res.json();
+      
       // Cat fallback logic with localStorage persistence
       const catImages = [
         '/cat/cat1.jpg',
@@ -368,6 +432,7 @@ const MusicDashboard: React.FC = () => {
         }
         return cat;
       }
+      
       if (data && data.id) {
         setSpotifyUserId(data.id);
         setSpotifyUserProfile({
@@ -379,7 +444,6 @@ const MusicDashboard: React.FC = () => {
       setSpotifyUserProfile(null);
       return false;
     } catch (e) {
-      console.error('Error checking token validity:', e);
       setSpotifyUserProfile(null);
       return false;
     } finally {
@@ -388,12 +452,18 @@ const MusicDashboard: React.FC = () => {
   };
 
   const handleSaveCreds = () => {
-    localStorage.setItem('spotify_client_id', clientId);
-    localStorage.setItem('spotify_client_secret', clientSecret);
+    // Pre-configure the credentials for development mode
+    const devClientId = '5b5e4ceb834347e6a6c3b998cfaf0088';
+    const devClientSecret = '9c9aadd2b18e49859df887e5e9cc6ede';
+    
+    localStorage.setItem('spotify_client_id', devClientId);
+    localStorage.setItem('spotify_client_secret', devClientSecret);
+    setClientId(devClientId);
+    setClientSecret(devClientSecret);
     setShowCredsModal(false);
     toast({
-      title: "Spotify Credentials Saved",
-      description: "Your Spotify Client ID and Secret have been saved.",
+      title: "Development Credentials Configured",
+      description: "Spotify credentials have been set up for development mode. You can now connect your account!",
       duration: 3000,
     });
   };
@@ -413,14 +483,10 @@ const MusicDashboard: React.FC = () => {
         .then(data => {
           if (data.access_token) {
             localStorage.setItem('spotify_token', data.access_token);
+            if (data.refresh_token) {
+              localStorage.setItem('spotify_refresh_token', data.refresh_token);
+            }
             setSpotifyToken(data.access_token);
-            
-            // Calculate and store token expiry time (8 hours from now)
-            const expiresIn = data.expires_in || 28800; // 8 hours in seconds
-            const expiryTime = new Date(Date.now() + expiresIn * 1000);
-            setTokenExpiryTime(expiryTime);
-            localStorage.setItem('spotify_token_expiry', expiryTime.toISOString());
-            
             window.history.replaceState({}, document.title, window.location.pathname);
           } else {
             console.error('Failed to exchange code for token:', data.error);
@@ -432,26 +498,8 @@ const MusicDashboard: React.FC = () => {
       return;
     }
     const token = localStorage.getItem('spotify_token');
-    const expiryStr = localStorage.getItem('spotify_token_expiry');
     if (token) {
       setSpotifyToken(token);
-      if (expiryStr) {
-        const expiry = new Date(expiryStr);
-        setTokenExpiryTime(expiry);
-        
-        // Check if token is expired
-        if (expiry < new Date()) {
-          localStorage.removeItem('spotify_token');
-          localStorage.removeItem('spotify_token_expiry');
-          setSpotifyToken(null);
-          setTokenExpiryTime(null);
-          toast({
-            title: "Spotify Token Expired",
-            description: "Your Spotify connection has expired (8-hour limit). Please reconnect.",
-            duration: 5000,
-          });
-        }
-      }
     }
   }, []);
 
@@ -465,6 +513,7 @@ const MusicDashboard: React.FC = () => {
     checkSpotifyTokenValidity(spotifyToken).then(valid => {
       if (!valid && isMounted) {
         localStorage.removeItem('spotify_token');
+        localStorage.removeItem('spotify_refresh_token');
         setSpotifyToken(null);
         setSpotifyUserId(null);
         setSpotifyUserProfile(null);
@@ -499,92 +548,104 @@ const MusicDashboard: React.FC = () => {
   const fetchRef = useRef(false);
   const intervalRefs = useRef<{progress?: NodeJS.Timeout, fallback?: NodeJS.Timeout}>({});
   
-  useEffect(() => {
+    useEffect(() => {
     if (spotifyToken && !fetchRef.current && !crossDomainLoading) {
-      fetchRef.current = true;
-      setCrossDomainLoading(true);
-      setCrossDomainProgress(0);
-      setCrossDomainStatus('starting');
-      setCrossDomainCurrentArtist('');
-      setCrossDomainCurrentDomain('');
-      
-                // Start fallback progress immediately in case backend progress fails
-    let immediateFallbackProgress = 0;
-    const fallbackInterval = setInterval(() => {
-      immediateFallbackProgress = Math.min(immediateFallbackProgress + 1, 85);
-      setCrossDomainProgress(immediateFallbackProgress);
-        }, 1000);
-    intervalRefs.current.fallback = fallbackInterval;
-      
-      // Real progress tracking for initial load with fallback
-      let fallbackProgress = 0;
-      let pollCount = 0;
-      const maxPolls = 300; // Maximum 5 minutes of polling (300 * 1000ms)
-      
-      const progressInterval = setInterval(async () => {
-        intervalRefs.current.progress = progressInterval;
-      pollCount++;
-      
-      // Stop polling if we've exceeded the maximum time
-      if (pollCount > maxPolls) {
-        console.log(`[FRONTEND] Initial load - Stopping progress polling - exceeded maximum time`);
-        clearInterval(progressInterval);
-        clearInterval(fallbackInterval);
-        intervalRefs.current.progress = undefined;
-        intervalRefs.current.fallback = undefined;
-        setCrossDomainLoading(false);
+      // Check token validity before proceeding
+      checkSpotifyTokenValidity(spotifyToken).then(isValid => {
+        if (!isValid) {
+          console.log('[FRONTEND] Token invalid, skipping cross-domain recommendations');
+          return;
+        }
+        
+        fetchRef.current = true;
+        setCrossDomainLoading(true);
         setCrossDomainProgress(0);
-        setCrossDomainStatus('');
-        return;
-      }
-        try {
-          if (spotifyUserId) {
-            console.log(`[FRONTEND] Initial load - Polling progress for user: ${spotifyUserId}`);
-            const progressRes = await fetch(`http://localhost:5500/crossdomain-progress/${spotifyUserId}`);
-            console.log(`[FRONTEND] Initial load - Progress response status: ${progressRes.status}`);
-            
-            if (progressRes.ok) {
-              const progressData = await progressRes.json();
-              console.log(`[FRONTEND] Initial load - Progress data:`, progressData);
+        setCrossDomainStatus('starting');
+        setCrossDomainCurrentArtist('');
+        setCrossDomainCurrentDomain('');
+        
+        // Start fallback progress immediately in case backend progress fails
+        let immediateFallbackProgress = 0;
+        const fallbackInterval = setInterval(() => {
+          immediateFallbackProgress = Math.min(immediateFallbackProgress + 1, 85);
+          setCrossDomainProgress(immediateFallbackProgress);
+        }, 1000);
+        intervalRefs.current.fallback = fallbackInterval;
+        
+        // Real progress tracking for initial load with fallback
+        let fallbackProgress = 0;
+        let pollCount = 0;
+        const maxPolls = 300; // Maximum 5 minutes of polling (300 * 1000ms)
+        
+        const progressInterval = setInterval(async () => {
+          intervalRefs.current.progress = progressInterval;
+          pollCount++;
+          
+          // Stop polling if we've exceeded the maximum time
+          if (pollCount > maxPolls) {
+            console.log(`[FRONTEND] Initial load - Stopping progress polling - exceeded maximum time`);
+            clearInterval(progressInterval);
+            clearInterval(fallbackInterval);
+            intervalRefs.current.progress = undefined;
+            intervalRefs.current.fallback = undefined;
+            setCrossDomainLoading(false);
+            setCrossDomainProgress(0);
+            setCrossDomainStatus('');
+            return;
+          }
+          try {
+            if (spotifyUserId) {
+              console.log(`[FRONTEND] Initial load - Polling progress for user: ${spotifyUserId}`);
+              const progressRes = await fetch(`http://localhost:5500/crossdomain-progress/${spotifyUserId}`);
+              console.log(`[FRONTEND] Initial load - Progress response status: ${progressRes.status}`);
               
-              setCrossDomainProgress(progressData.percentage);
-              setCrossDomainStatus(progressData.status);
-              setCrossDomainCurrentArtist(progressData.current_artist);
-              setCrossDomainCurrentDomain(progressData.current_domain);
-              
-              // Stop polling if completed or error
-              if (progressData.status === 'completed' || progressData.status === 'error') {
-                console.log(`[FRONTEND] Initial load - Stopping progress polling - status: ${progressData.status}`);
-                clearInterval(progressInterval);
-                clearInterval(fallbackInterval);
-                intervalRefs.current.progress = undefined;
-                intervalRefs.current.fallback = undefined;
-                return; // Exit early to prevent further processing
+              if (progressRes.ok) {
+                const progressData = await progressRes.json();
+                console.log(`[FRONTEND] Initial load - Progress data:`, progressData);
+                
+                setCrossDomainProgress(progressData.percentage);
+                setCrossDomainStatus(progressData.status);
+                setCrossDomainCurrentArtist(progressData.current_artist);
+                setCrossDomainCurrentDomain(progressData.current_domain);
+                
+                // Stop polling if completed or error
+                if (progressData.status === 'completed' || progressData.status === 'error') {
+                  console.log(`[FRONTEND] Initial load - Stopping progress polling - status: ${progressData.status}`);
+                  clearInterval(progressInterval);
+                  clearInterval(fallbackInterval);
+                  intervalRefs.current.progress = undefined;
+                  intervalRefs.current.fallback = undefined;
+                  return; // Exit early to prevent further processing
+                }
+              } else {
+                console.log(`[FRONTEND] Initial load - Progress response not ok, using fallback`);
+                // Fallback progress if backend progress fails
+                fallbackProgress = Math.min(fallbackProgress + 2, 85);
+                setCrossDomainProgress(fallbackProgress);
+                setCrossDomainStatus('processing');
               }
             } else {
-              console.log(`[FRONTEND] Initial load - Progress response not ok, using fallback`);
-              // Fallback progress if backend progress fails
-              fallbackProgress = Math.min(fallbackProgress + 2, 85);
-              setCrossDomainProgress(fallbackProgress);
-              setCrossDomainStatus('processing');
+              console.log(`[FRONTEND] Initial load - No spotifyUserId available`);
             }
-          } else {
-            console.log(`[FRONTEND] Initial load - No spotifyUserId available`);
+          } catch (error) {
+            console.error('[FRONTEND] Initial load - Error fetching progress:', error);
+            // Fallback progress if network error
+            fallbackProgress = Math.min(fallbackProgress + 2, 85);
+            setCrossDomainProgress(fallbackProgress);
+            setCrossDomainStatus('processing');
           }
-        } catch (error) {
-          console.error('[FRONTEND] Initial load - Error fetching progress:', error);
-          // Fallback progress if network error
-          fallbackProgress = Math.min(fallbackProgress + 2, 85);
-          setCrossDomainProgress(fallbackProgress);
-          setCrossDomainStatus('processing');
-        }
-      }, 1000); // Poll every 1000ms instead of 500ms to reduce load
-      
-      fetch('http://localhost:5500/crossdomain-recommendations', {
+        }, 1000); // Poll every 1000ms instead of 500ms to reduce load
+        
+        // For initial load, we don't have existing data, so we'll let the backend fetch from Spotify
+        fetch('http://localhost:5500/crossdomain-recommendations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           spotify_token: spotifyToken,
+          user_context: "music discovery and cross-domain recommendations",
+          music_artists: [], // Empty for initial load, backend will fetch from Spotify
+          top_scored_artists: [], // Empty for initial load, backend will fetch from Spotify
+          user_tags: [], // Empty for now, can be enhanced later
           limit: 5, // Get 5 recommendations per domain for faster response
         }),
       })
@@ -619,6 +680,7 @@ const MusicDashboard: React.FC = () => {
           setCrossDomainLoading(false);
           setCrossDomainProgress(0);
         });
+      });
     }
     
     // Cleanup function to clear intervals when component unmounts
@@ -698,174 +760,226 @@ const MusicDashboard: React.FC = () => {
       {location.pathname === '/' && (
         <>
           <div className="fixed top-2 right-2 sm:top-4 sm:right-4 z-50 flex flex-col sm:flex-row gap-2">
-            {/* Only show Connect/Disconnect button if credentials are set */}
-            {clientId && clientSecret ? (
-              <button
-                className={`border-2 border-black px-3 py-1.5 sm:px-4 sm:py-2 rounded-full font-comic font-bold shadow comic-shadow text-sm sm:text-base transition ${spotifyToken ? 'bg-green-200 text-green-900 hover:bg-red-400 hover:text-white' : 'bg-black text-white hover:bg-green-700'}`}
-                onClick={async () => {
-                  if (spotifyToken) {
-                    // Disconnect - Full logout with token revocation
-                    try {
-                      // Call backend to revoke the token
-                      const logoutResponse = await fetch('http://localhost:5500/logout', {
-                        method: 'POST',
-                        headers: {
-                          'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                          access_token: spotifyToken,
-                          client_id: clientId,
-                          client_secret: clientSecret
-                        })
-                      });
-                      
-                      const logoutData = await logoutResponse.json();
-                      console.log('Logout response:', logoutData);
-                    } catch (error) {
-                      console.log('Token revocation failed, but proceeding with logout:', error);
-                    }
-                    
-                    // Clear ALL browser storage to force re-authentication
-                    localStorage.clear();
-                    sessionStorage.clear();
-                    
-                    // Clear cookies related to Spotify
-                    document.cookie.split(";").forEach(function(c) { 
-                      document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/"); 
+            {/* Always show Connect/Disconnect button */}
+            <button
+              className={`border-2 border-black px-3 py-1.5 sm:px-4 sm:py-2 rounded-full font-comic font-bold shadow comic-shadow text-sm sm:text-base transition ${spotifyToken ? 'bg-green-200 text-green-900 hover:bg-red-400 hover:text-white' : 'bg-black text-white hover:bg-green-700'}`}
+              onClick={async () => {
+                if (spotifyToken) {
+                  // Disconnect - Full logout with token revocation
+                  try {
+                    // Call backend to revoke the token
+                    const logoutResponse = await fetch('http://localhost:5500/logout', {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                      },
+                      body: JSON.stringify({
+                        access_token: spotifyToken,
+                        client_id: clientId,
+                        client_secret: clientSecret
+                      })
                     });
                     
-                    // Clear local state
-                    setSpotifyToken(null);
-                    setSpotifyUserId(null);
-                    setSpotifyUserProfile(null);
-                    setCrossDomainRecs(null);
-                    setCrossDomainLoading(false);
-                    setCrossDomainProgress(0);
-                    setCrossDomainStatus('');
-                    setCrossDomainCurrentArtist('');
-                    setCrossDomainCurrentDomain('');
-                    setMessages([]);
-                    setIsLoading(false);
-                    
-                    // Clear any cached data
-                    try {
-                      await fetch('http://localhost:5500/clear-cache', {
-                        method: 'POST',
-                        headers: {
-                          'Content-Type': 'application/json',
-                        }
-                      });
-                    } catch (error) {
-                      console.log('Cache clearing failed:', error);
-                    }
-                    
-                    // Force a complete page reload to clear any remaining state
-                    window.location.reload();
-                  } else {
-                    // Connect with standard redirect URI but force dialog
-                    const res = await fetch('http://localhost:5500/spotify-auth-url?redirect_uri=http://127.0.0.1:8080/callback');
-                    const data = await res.json();
-                    window.location.href = data.auth_url;
+                    const logoutData = await logoutResponse.json();
+                    console.log('Logout response:', logoutData);
+                  } catch (error) {
+                    console.log('Token revocation failed, but proceeding with logout:', error);
                   }
-                }}
-                disabled={checkingToken}
-              >
-                {checkingToken
-                  ? 'Checking...'
-                  : spotifyToken
-                    ? 'Disconnect Spotify'
-                    : 'Connect to Spotify'}
-              </button>
-            ) : null}
-            
-            {/* Token expiry warning */}
-            {spotifyToken && tokenExpiryTime && (
-              <div className="text-xs text-gray-600 bg-yellow-100 px-2 py-1 rounded border border-yellow-300">
-                ⏰ Token expires: {tokenExpiryTime.toLocaleTimeString()} ({Math.round((tokenExpiryTime.getTime() - Date.now()) / (1000 * 60))} min left)
-              </div>
-            )}
-            
-            {/* Always show credentials button */}
-            <button
-              className="border-2 border-black px-3 py-1.5 sm:px-4 sm:py-2 rounded-full font-comic font-bold shadow comic-shadow text-sm sm:text-base bg-yellow-200 text-black hover:bg-yellow-300"
-              onClick={() => setShowCredsModal(true)}
+                  
+                  // Clear ALL browser storage to force re-authentication
+                  localStorage.clear();
+                  sessionStorage.clear();
+                  
+                  // Clear cookies related to Spotify
+                  document.cookie.split(";").forEach(function(c) { 
+                    document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/"); 
+                  });
+                  
+                  // Clear local state
+                  setSpotifyToken(null);
+                  setSpotifyUserId(null);
+                  setSpotifyUserProfile(null);
+                  localStorage.removeItem('spotify_token');
+                  localStorage.removeItem('spotify_refresh_token');
+                  setCrossDomainRecs(null);
+                  setCrossDomainLoading(false);
+                  setCrossDomainProgress(0);
+                  setCrossDomainStatus('');
+                  setCrossDomainCurrentArtist('');
+                  setCrossDomainCurrentDomain('');
+                  setMessages([]);
+                  setIsLoading(false);
+                  
+                  // Clear any cached data
+                  try {
+                    await fetch('http://localhost:5500/clear-cache', {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                      }
+                    });
+                  } catch (error) {
+                    console.log('Cache clearing failed:', error);
+                  }
+                  
+                  // Show success message and redirect to re-authentication
+                  toast({
+                    title: "Logged out successfully",
+                    description: "You have been logged out. You can now connect with a different account.",
+                    duration: 3000,
+                  });
+                  
+                  // Redirect to re-authentication flow after a short delay
+                  setTimeout(() => {
+                    fetch('http://localhost:5500/spotify-auth-url?redirect_uri=http://127.0.0.1:8080/callback&force_reauth=true')
+                      .then(res => res.json())
+                      .then(data => {
+                        window.location.href = data.auth_url;
+                      })
+                      .catch(error => {
+                        console.error('Error getting auth URL:', error);
+                        // Fallback to page reload if auth URL fails
+                        window.location.reload();
+                      });
+                  }, 1000);
+                } else {
+                  // Connect with standard redirect URI but force dialog
+                  const res = await fetch('http://localhost:5500/spotify-auth-url?redirect_uri=http://127.0.0.1:8080/callback&force_reauth=true');
+                  const data = await res.json();
+                  window.location.href = data.auth_url;
+                }
+              }}
+              disabled={checkingToken}
             >
-              Set Spotify Credentials
+              {checkingToken
+                ? 'Checking...'
+                : spotifyToken
+                  ? 'Disconnect Spotify'
+                  : 'Connect to Spotify'}
             </button>
+            
+            {/* Show credentials info button only when not connected */}
+            {!spotifyToken && (
+              <button
+                className="border-2 border-black px-3 py-1.5 sm:px-4 sm:py-2 rounded-full font-comic font-bold shadow comic-shadow text-sm sm:text-base bg-yellow-200 text-black hover:bg-yellow-300"
+                onClick={() => setShowCredsModal(true)}
+              >
+                How to Connect Your Account
+              </button>
+            )}
 
 
 
           </div>
 
-          {/* Modal for entering credentials */}
+          {/* Modal for connecting account */}
           <Dialog open={showCredsModal} onOpenChange={setShowCredsModal}>
-            <DialogContent className="bg-white border-4 border-black comic-shadow max-w-md mx-auto p-6">
+            <DialogContent 
+              className="bg-white border-4 border-black comic-shadow max-w-2xl mx-auto p-6"
+              aria-describedby="credentials-description"
+            >
               <DialogHeader>
-                <DialogTitle className="text-xl font-bold text-black comic-shadow text-center">
-                  Enter Spotify Client Credentials
+                <DialogTitle className="text-2xl font-bold text-black comic-shadow text-center">
+                  How to Connect Your Spotify Account
                 </DialogTitle>
+                <p id="credentials-description" className="text-sm text-gray-600 text-center mt-2">
+                  We're running in development mode on Spotify, so there are some limitations. Here's how to connect:
+                </p>
               </DialogHeader>
-              <div className="flex flex-col gap-4 mt-4 max-h-[60vh] overflow-y-auto pr-2">
-                <label className="font-bold text-black">Client ID</label>
-                <Input
-                  value={clientId}
-                  onChange={e => setClientId(e.target.value)}
-                  placeholder="Enter your Spotify Client ID"
-                  className="border-2 border-black"
-                />
-                <label className="font-bold text-black">Client Secret</label>
-                <Input
-                  value={clientSecret}
-                  onChange={e => setClientSecret(e.target.value)}
-                  placeholder="Enter your Spotify Client Secret"
-                  type="password"
-                  className="border-2 border-black"
-                />
-                {/* Improved testing credentials section with cat and copy buttons */}
-                <div className="flex flex-col items-center bg-yellow-50 border-2 border-dashed border-black rounded-lg p-4 mt-4">
-                  <img src="/cat/404caty.jpg" alt="Testing Cat" className="w-16 h-16 rounded-full border-2 border-black mb-2" />
-                  <div className="text-center font-comic text-lg font-bold text-black mb-1">
-                    Need test credentials?
+              <div className="flex flex-col gap-6 mt-6 max-h-[70vh] overflow-y-auto pr-2">
+                
+                {/* Step 1: Development Mode Notice */}
+                <div className="bg-yellow-50 border-2 border-yellow-400 rounded-lg p-4">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-8 h-8 bg-yellow-400 rounded-full flex items-center justify-center">
+                      <span className="text-lg">⚠️</span>
+                    </div>
+                    <h3 className="font-comic font-bold text-lg text-black">Development Mode</h3>
                   </div>
+                  <p className="text-sm text-gray-700 font-comic">
+                    We're currently running in Spotify's development mode. This means you need to be added as a user to access the app.
+                  </p>
+                </div>
+
+                {/* Step 2: Account Setup */}
+                <div className="bg-blue-50 border-2 border-blue-400 rounded-lg p-4">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-8 h-8 bg-blue-400 rounded-full flex items-center justify-center text-white font-bold">
+                      1
+                    </div>
+                    <h3 className="font-comic font-bold text-lg text-black">Account Setup</h3>
+                  </div>
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-3">
+                      <span className="font-bold text-black">Email:</span>
+                      <span className="font-mono text-sm bg-white border border-black rounded px-2 py-1 select-all">
+                        deepsantoshwargfg@gmail.com
+                      </span>
+                      <button
+                        className="bg-blue-200 border-2 border-black rounded px-2 py-1 text-xs font-bold hover:bg-blue-300"
+                        onClick={() => navigator.clipboard.writeText('deepsantoshwargfg@gmail.com')}
+                      >
+                        Copy
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="font-bold text-black">Password:</span>
+                      <span className="font-mono text-sm bg-white border border-black rounded px-2 py-1 select-all">
+                        Deep@12345678
+                      </span>
+                      <button
+                        className="bg-blue-200 border-2 border-black rounded px-2 py-1 text-xs font-bold hover:bg-blue-300"
+                        onClick={() => navigator.clipboard.writeText('Deep@12345678')}
+                      >
+                        Copy
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+
+
+                {/* Step 2: Connection Instructions */}
+                <div className="bg-purple-50 border-2 border-purple-400 rounded-lg p-4">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-8 h-8 bg-purple-400 rounded-full flex items-center justify-center text-white font-bold">
+                      2
+                    </div>
+                    <h3 className="font-comic font-bold text-lg text-black">Connect Your Account</h3>
+                  </div>
+                  <div className="space-y-2 text-sm text-gray-700 font-comic">
+                    <p>1. Use the provided email and password to log in</p>
+                    <p>2. Click the "Connect to Spotify" button above</p>
+                    <p>3. Authorize the app when prompted</p>
+                    <p>4. Start creating your perfect playlists! 🎵</p>
+                  </div>
+                  <div className="mt-3 pt-3 border-t border-purple-300">
+                    <p className="text-xs text-gray-600 font-comic">
+                      📚 Need more info? Check out the{' '}
+                      <a 
+                        href="https://developer.spotify.com/" 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="bg-yellow-300 text-black px-2 py-1 rounded border-2 border-black font-bold hover:bg-yellow-400 transition-colors"
+                      >
+                        Spotify Developer Documentation
+                      </a>
+                    </p>
+                  </div>
+                </div>
+
+                {/* Cat's Note */}
+                <div className="flex flex-col items-center bg-yellow-50 border-2 border-dashed border-black rounded-lg p-4">
+                  <img src="/cat/404caty.jpg" alt="Caty's Note" className="w-16 h-16 rounded-full border-2 border-black mb-2" />
                   <div className="text-center font-comic text-base text-black mb-2">
-                    😼 Cat says:<br />
-                    "Don't have your own Spotify keys? No problem!<br />
-                    Copy these to try the app right <b>meow</b>."
-                  </div>
-                  <div className="w-full flex flex-col gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-black">Client ID:</span>
-                      <span className="font-mono text-xs bg-white border border-black rounded px-2 py-1 select-all">
-                        5b5e4ceb834347e6a6c3b998cfaf0088
-                      </span>
-                      <button
-                        className="bg-yellow-200 border-2 border-black rounded px-2 py-1 text-xs font-bold hover:bg-yellow-300"
-                        onClick={() => navigator.clipboard.writeText('5b5e4ceb834347e6a6c3b998cfaf0088')}
-                      >
-                        Copy
-                      </button>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-black">Client Secret:</span>
-                      <span className="font-mono text-xs bg-white border border-black rounded px-2 py-1 select-all">
-                        9c9aadd2b18e49859df887e5e9cc6ede
-                      </span>
-                      <button
-                        className="bg-yellow-200 border-2 border-black rounded px-2 py-1 text-xs font-bold hover:bg-yellow-300"
-                        onClick={() => navigator.clipboard.writeText('9c9aadd2b18e49859df887e5e9cc6ede')}
-                      >
-                        Copy
-                      </button>
-                    </div>
-                  </div>
-                  <div className="text-xs text-gray-600 mt-2 text-center">
-                    (For your own playlists, use your own Spotify keys!)
+                    😼 Caty says:<br />
+                    "Don't worry about the credentials - they're already set up!<br />
+                    Just use the account details above and you'll be jamming in no time! 🎸"
                   </div>
                 </div>
 
                 <div className="flex justify-end gap-2 mt-4">
-                  <Button onClick={() => setShowCredsModal(false)} variant="secondary" className="border-2 border-black">Cancel</Button>
-                  <Button onClick={handleSaveCreds} className="bg-green-500 hover:bg-green-600 text-white font-bold border-2 border-black">Save</Button>
+                  <Button onClick={handleSaveCreds} className="bg-green-500 hover:bg-green-600 text-white font-bold border-2 border-black">Done</Button>
                 </div>
               </div>
             </DialogContent>
@@ -913,6 +1027,117 @@ const MusicDashboard: React.FC = () => {
                 loading={isLoading}
               />
             </div>
+
+            {/* S7 Edge-style Side Panel - Only show when connected to Spotify */}
+            {spotifyToken && spotifyUserId && (
+              <>
+                {/* Edge Handle - Always visible */}
+                <div 
+                  className="fixed right-0 top-1/2 transform -translate-y-1/2 z-40 cursor-pointer"
+                  onClick={() => setRightPanelOpen(!rightPanelOpen)}
+                >
+                  <div className="bg-yellow-200 border-2 border-black rounded-l-lg p-2 shadow-lg comic-shadow">
+                    <BarChart3 className="h-6 w-6 text-black" />
+                  </div>
+                </div>
+
+                {/* Sliding Panel */}
+                <div 
+                  className={`fixed right-0 top-0 h-full z-50 transition-transform duration-300 ease-out ${
+                    rightPanelOpen ? 'translate-x-0' : 'translate-x-full'
+                  }`}
+                  style={{
+                    transform: `translateX(${rightPanelOpen ? '0%' : '100%'})`,
+                    width: '400px',
+                    maxWidth: '90vw'
+                  }}
+                >
+                  {/* Panel Content */}
+                  <div className="h-full bg-white border-l-2 border-black shadow-2xl comic-shadow">
+                    {/* Panel Header */}
+                    <div className="bg-yellow-50 border-b-2 border-black p-4 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <BarChart3 className="h-5 w-5 text-black" />
+                        <h2 className="font-comic font-bold text-black text-lg">Music Dashboard</h2>
+                      </div>
+                      <button
+                        onClick={() => setRightPanelOpen(false)}
+                        className="bg-white hover:bg-gray-100 border-2 border-black rounded-full p-1 comic-shadow"
+                      >
+                        <svg className="h-4 w-4 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+
+                    {/* Panel Body */}
+                    <ScrollArea className="h-full">
+                      <div className="p-4">
+                        <Tabs defaultValue="history" className="w-full">
+                          <TabsList className="grid w-full grid-cols-3 bg-white border-2 border-black comic-shadow mb-4 rounded-lg overflow-hidden">
+                            <TabsTrigger 
+                              value="history" 
+                              className="flex items-center justify-center gap-2 font-comic font-bold text-xs data-[state=active]:bg-black data-[state=active]:text-white data-[state=inactive]:bg-white data-[state=inactive]:text-gray-700 data-[state=inactive]:border-r data-[state=inactive]:border-gray-200 transition-all duration-200 py-3 px-4"
+                            >
+                              <History className="h-4 w-4" />
+                              <span className="hidden sm:inline">History</span>
+                            </TabsTrigger>
+                            <TabsTrigger 
+                              value="new-artists" 
+                              className="flex items-center justify-center gap-2 font-comic font-bold text-xs data-[state=active]:bg-black data-[state=active]:text-white data-[state=inactive]:bg-white data-[state=inactive]:text-gray-700 data-[state=inactive]:border-r data-[state=inactive]:border-gray-200 transition-all duration-200 py-3 px-4"
+                            >
+                              <Sparkles className="h-4 w-4" />
+                              <span className="hidden sm:inline">Discoveries</span>
+                            </TabsTrigger>
+                            <TabsTrigger 
+                              value="analytics" 
+                              className="flex items-center justify-center gap-2 font-comic font-bold text-xs data-[state=active]:bg-black data-[state=active]:text-white data-[state=inactive]:bg-white data-[state=inactive]:text-gray-700 transition-all duration-200 py-3 px-4"
+                            >
+                              <BarChart3 className="h-4 w-4" />
+                              <span className="hidden sm:inline">Analytics</span>
+                            </TabsTrigger>
+                          </TabsList>
+                          
+                          <TabsContent value="history" className="mt-4 data-[state=active]:animate-in data-[state=active]:fade-in-0 data-[state=active]:slide-in-from-top-2 duration-300">
+                            <RecommendationHistory 
+                              userId={spotifyUserId} 
+                              spotifyToken={spotifyToken}
+                              onReplayRecommendation={(historyItem) => {
+                                handleInputSendWithSpotifyCheck(historyItem.user_context);
+                                setRightPanelOpen(false);
+                              }}
+                            />
+                          </TabsContent>
+                          
+                          <TabsContent value="new-artists" className="mt-4 data-[state=active]:animate-in data-[state=active]:fade-in-0 data-[state=active]:slide-in-from-top-2 duration-300">
+                            <NewArtistsIndicator 
+                              userId={spotifyUserId}
+                              spotifyToken={spotifyToken}
+                              onArtistClick={(artistName) => {
+                                handleInputSendWithSpotifyCheck(`music like ${artistName}`);
+                                setRightPanelOpen(false);
+                              }}
+                            />
+                          </TabsContent>
+                          
+                          <TabsContent value="analytics" className="mt-4 data-[state=active]:animate-in data-[state=active]:fade-in-0 data-[state=active]:slide-in-from-top-2 duration-300">
+                            <UserTasteGraph userId={spotifyUserId} />
+                          </TabsContent>
+                        </Tabs>
+                      </div>
+                    </ScrollArea>
+                  </div>
+                </div>
+
+                {/* Backdrop */}
+                {rightPanelOpen && (
+                  <div 
+                    className="fixed inset-0 bg-black bg-opacity-50 z-40"
+                    onClick={() => setRightPanelOpen(false)}
+                  />
+                )}
+              </>
+            )}
 
             {/* Caty Recommendations - Enhanced Comic Theme */}
             <div className="max-w-6xl mx-auto font-comic">
@@ -1748,11 +1973,17 @@ const MusicDashboard: React.FC = () => {
 
         {/* Modal - Proper scrolling and layout */}
         <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
-          <DialogContent className="bg-white border-4 border-black comic-shadow max-w-2xl mx-auto p-0 max-h-[90vh] flex flex-col">
+          <DialogContent 
+            className="bg-white border-4 border-black comic-shadow max-w-2xl mx-auto p-0 max-h-[90vh] flex flex-col"
+            aria-describedby="details-description"
+          >
             {selectedRec && (
               <>
                 {/* Fixed Header */}
                 <div className="p-4 sm:p-6 border-b-2 border-black bg-yellow-50">
+                  <p id="details-description" className="sr-only">
+                    Detailed information about {selectedRec.name}
+                  </p>
                   <div className="flex items-center gap-4">
                     {selectedRec.properties?.image?.url ? (
                       <img

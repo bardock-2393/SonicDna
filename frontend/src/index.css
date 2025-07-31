@@ -587,6 +587,33 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* Tab animations */
+@keyframes fade-in-0 {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slide-in-from-top-2 {
+  from { transform: translateY(-0.5rem); }
+  to { transform: translateY(0); }
+}
+
+.animate-in {
+  animation-fill-mode: both;
+}
+
+.fade-in-0 {
+  animation-name: fade-in-0;
+}
+
+.slide-in-from-top-2 {
+  animation-name: slide-in-from-top-2;
+}
+
+.duration-300 {
+  animation-duration: 300ms;
+}
+
 /* Responsive breakpoint utilities */
 @media (max-width: 640px) {
   .mobile-text-sm {
@@ -645,5 +672,144 @@
   
   .desktop-text-2xl {
     font-size: 1.5rem;
+  }
+}
+
+/* Discovery section improvements */
+.discovery-card {
+  @apply bg-white border-2 border-black rounded-lg shadow-md hover:shadow-lg transition-all duration-200;
+  min-height: fit-content;
+  overflow: visible;
+}
+
+.discovery-card:hover {
+  @apply transform -translate-y-1;
+}
+
+.artist-name {
+  @apply font-bold text-gray-900 break-words leading-tight;
+  word-break: break-word;
+  hyphens: auto;
+}
+
+.genre-badge {
+  @apply inline-flex items-center px-2 py-1 rounded-full text-xs font-medium;
+  max-width: 100%;
+  overflow: visible;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.genre-container {
+  @apply flex flex-wrap gap-1.5;
+  min-height: 1.5rem;
+  overflow: visible;
+  max-width: 100%;
+}
+
+.genre-badge-expandable {
+  @apply cursor-pointer hover:bg-gray-200 transition-colors;
+  position: relative;
+  z-index: 10;
+}
+
+.popularity-bar {
+  @apply w-20 h-2.5 bg-gray-200 rounded-full overflow-hidden;
+}
+
+.popularity-fill {
+  @apply h-full bg-gradient-to-r from-green-400 to-blue-500 rounded-full transition-all duration-300;
+}
+
+.explore-button {
+  @apply bg-blue-500 hover:bg-blue-600 text-white font-bold border-2 border-black shadow-lg rounded-lg transition-all duration-200;
+}
+
+.explore-button:hover {
+  @apply transform scale-105 shadow-xl;
+}
+
+/* Ensure text is always visible */
+.text-visible {
+  @apply text-gray-900;
+  text-shadow: 0 0 1px rgba(255, 255, 255, 0.8);
+}
+
+/* Responsive text sizing for discovery cards */
+@media (max-width: 640px) {
+  .discovery-card {
+    @apply p-3;
+  }
+  
+  .artist-name {
+    @apply text-base;
+  }
+  
+  .genre-badge {
+    @apply text-xs px-1.5 py-0.5;
+  }
+  
+  .explore-button {
+    @apply text-sm px-3 py-1.5;
+  }
+  
+  .genre-container {
+    @apply gap-1;
+  }
+}
+
+@media (min-width: 641px) and (max-width: 1024px) {
+  .discovery-card {
+    @apply p-4;
+  }
+  
+  .artist-name {
+    @apply text-lg;
+  }
+  
+  .genre-badge {
+    @apply text-sm px-2 py-1;
+  }
+  
+  .genre-container {
+    @apply gap-1;
+  }
+}
+
+@media (min-width: 1025px) {
+  .discovery-card {
+    @apply p-5;
+  }
+  
+  .artist-name {
+    @apply text-xl;
+  }
+  
+  .genre-badge {
+    @apply text-sm px-2.5 py-1.5;
+  }
+  
+  .genre-container {
+    @apply gap-1.5;
+  }
+}
+
+/* Large screen optimizations */
+@media (min-width: 1440px) {
+  .discovery-card {
+    @apply p-6;
+  }
+  
+  .artist-name {
+    @apply text-2xl;
+  }
+  
+  .genre-badge {
+    @apply text-base px-3 py-2;
+  }
+  
+  .genre-container {
+    @apply gap-2;
   }
 }

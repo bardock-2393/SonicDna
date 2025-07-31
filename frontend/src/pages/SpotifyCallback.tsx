@@ -9,20 +9,50 @@ const SpotifyCallback = () => {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const code = params.get('code');
+    const state = params.get('state');
+    const error = params.get('error');
+    
+    if (error) {
+      console.error('Spotify authorization error:', error);
+      // Handle authorization errors
+      setConnected(false);
+      return;
+    }
+    
     if (code) {
       // Exchange code for access token via backend
       fetch('http://localhost:5500/exchange-token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code })
+        body: JSON.stringify({ 
+          code,
+          redirect_uri: 'http://127.0.0.1:8080/callback',
+          state: state // Pass state for verification if needed
+        })
       })
         .then(res => res.json())
         .then(data => {
           if (data.access_token) {
+            // Clear any existing tokens first
+            localStorage.removeItem('spotify_token');
+            localStorage.removeItem('spotify_refresh_token');
+            
+            // Set new tokens
             localStorage.setItem('spotify_token', data.access_token);
+            if (data.refresh_token) {
+              localStorage.setItem('spotify_refresh_token', data.refresh_token);
+            }
+            
             setConnected(true);
             window.history.replaceState({}, document.title, window.location.pathname);
+          } else {
+            console.error('Failed to exchange code for token:', data.error);
+            setConnected(false);
           }
+        })
+        .catch(error => {
+          console.error('Error exchanging code for token:', error);
+          setConnected(false);
         });
     }
   }, []);
