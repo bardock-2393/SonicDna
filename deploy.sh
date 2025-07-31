@@ -65,7 +65,26 @@ install_packages() {
     
     # Install Python 3.11 and pip
     print_status "Installing Python 3.11..."
-    sudo apt install -y python3.11 python3.11-venv python3.11-dev python3-pip
+    
+    # Check Ubuntu version and install Python accordingly
+    UBUNTU_VERSION=$(lsb_release -rs)
+    print_status "Detected Ubuntu version: $UBUNTU_VERSION"
+    
+    if [[ "$UBUNTU_VERSION" == "20.04" ]] || [[ "$UBUNTU_VERSION" == "18.04" ]]; then
+        # For older Ubuntu versions, add deadsnakes PPA
+        print_status "Adding deadsnakes PPA for Python 3.11..."
+        sudo add-apt-repository ppa:deadsnakes/ppa -y
+        sudo apt update
+        sudo apt install -y python3.11 python3.11-venv python3.11-dev python3-pip
+    else
+        # For newer Ubuntu versions, try default repositories first
+        if ! sudo apt install -y python3.11 python3.11-venv python3.11-dev python3-pip; then
+            print_status "Python 3.11 not found in default repos, adding deadsnakes PPA..."
+            sudo add-apt-repository ppa:deadsnakes/ppa -y
+            sudo apt update
+            sudo apt install -y python3.11 python3.11-venv python3.11-dev python3-pip
+        fi
+    fi
     
     # Install Caddy
     print_status "Installing Caddy..."
