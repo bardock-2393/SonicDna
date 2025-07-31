@@ -78,7 +78,7 @@ install_packages() {
     print_success "All packages installed successfully"
 }
 
-# Function to create project directory and clone repository
+# Function to create project directory
 setup_project() {
     print_status "Setting up project directory..."
     
@@ -86,17 +86,8 @@ setup_project() {
     sudo mkdir -p /opt/$PROJECT_NAME
     sudo chown $USER:$USER /opt/$PROJECT_NAME
     
-    # Clone repository
-    cd /opt/$PROJECT_NAME
-    if [ -d ".git" ]; then
-        print_status "Repository already exists, pulling latest changes..."
-        git pull origin main
-    else
-        print_status "Cloning repository..."
-        git clone $GITHUB_REPO .
-    fi
-    
-    print_success "Project setup completed"
+    print_success "Project directory created at /opt/$PROJECT_NAME"
+    print_warning "Please copy your project files to /opt/$PROJECT_NAME manually"
 }
 
 # Function to setup backend

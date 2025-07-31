@@ -29,7 +29,7 @@ chmod +x deploy.sh
 The script will automatically:
 - Update the system
 - Install all required packages (Node.js, Python 3.11, Caddy)
-- Clone the repository
+- Create project directory
 - Set up backend and frontend services
 - Configure Caddy reverse proxy
 - Set up firewall
