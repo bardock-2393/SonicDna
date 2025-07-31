@@ -221,7 +221,7 @@ export const StickyScroll = ({
           contentClassName,
         )}
       >
-        {content && content.length > 0 && activeCard >= 0 && activeCard < content.length && content[activeCard]?.content ?? null}
+        {(content && content.length > 0 && activeCard >= 0 && activeCard < content.length && content[activeCard]?.content) ?? null}
       </div>
     </motion.div>
   );
