@@ -37,7 +37,7 @@ sudo apt install -y python3 python3-pip python3-venv python3-dev
 
 # Install Node.js and npm
 print_status "Installing Node.js and npm..."
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt install -y nodejs
 
 # Install Caddy
@@ -54,6 +54,13 @@ sudo ufw allow 22
 sudo ufw allow 80
 sudo ufw allow 443
 sudo ufw --force enable
+
+# Check if UFW is active
+if sudo ufw status | grep -q "Status: active"; then
+    print_status "Firewall is active and configured"
+else
+    print_warning "Firewall may not be active - check manually with: sudo ufw status"
+fi
 
 # Create application directory
 print_status "Creating application directory..."
@@ -79,6 +86,26 @@ npm --version
 
 echo "Caddy version:"
 caddy version
+
+# Test if ports are accessible
+print_status "Testing port accessibility..."
+if nc -z localhost 22; then
+    print_status "✅ Port 22 (SSH) is accessible"
+else
+    print_warning "⚠️  Port 22 (SSH) may not be accessible"
+fi
+
+if nc -z localhost 80; then
+    print_status "✅ Port 80 (HTTP) is accessible"
+else
+    print_warning "⚠️  Port 80 (HTTP) may not be accessible"
+fi
+
+if nc -z localhost 443; then
+    print_status "✅ Port 443 (HTTPS) is accessible"
+else
+    print_warning "⚠️  Port 443 (HTTPS) may not be accessible"
+fi
 
 print_status "Server setup completed!"
 print_status "You can now run the deployment script to deploy your application."
